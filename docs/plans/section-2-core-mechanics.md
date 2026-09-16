@@ -1,8 +1,9 @@
-# Section 2 — Core Mechanics: Implementation Plan
+# Section 2 — Core Mechanics: Plan
 
-**Source:** *Game Concept Document: Slice & Serve*, section 2 (2.1 Ingredient Gathering / The Board, 2.2 Fulfilling Orders & Customer Patience).
-**Deliverable owner:** this plan. Implementation happens in a later session.
-**Status:** draft for sign-off — see [§11 Decisions requiring sign-off](#11-decisions-requiring-sign-off).
+**Concept source:** [`../concept.md`](../concept.md), §2 — *2.1 Ingredient Gathering (The Board)*, *2.2 Fulfilling Orders & Customer Patience*.
+**Runbook:** [`section-2-implementation-steps.md`](./section-2-implementation-steps.md) — the executable half. Where this plan and the runbook disagree, this plan wins.
+**Sibling:** [`section-1-game-overview.md`](./section-1-game-overview.md) — owns platform, orientation, aspect and budgets.
+**Decisions:** [`README.md`](./README.md) is the single decision log. This section owns **D3–D6** and **D10–D15**.
 
 ---
 
@@ -10,7 +11,7 @@
 
 ### In scope
 
-| Ref | Requirement from the concept doc | Covered by |
+| Ref | Concept-document requirement | Covered by |
 | --- | --- | --- |
 | 2.1 | Knife is launched into the board and bounces like a ping-pong ball | §5.2, §5.3 |
 | 2.1 | Bouncing knife slices and collects the ingredients it hits | §5.4, §5.5 |
@@ -20,69 +21,65 @@
 | 2.2 | Visible patience bar per customer | §6.4, §6.5 |
 | 2.2 | Depleted patience → customer leaves angry → lost revenue or lost lives/reputation | §6.4, §6.6 |
 
-### Explicitly out of scope (but the plan must not block them)
+### Out of scope — but the plan must not block it
 
-- **§3 Economy & Upgrades** — no upgrade UI, no cash sinks, no upgrade data. Section 2 must instead expose the *runtime-mutable tuning* seams those upgrades will write to (§3.1 below).
-- **§4 Difficulty Scaling** — no time-based ramp. Section 2 exposes an `IDifficultyProvider` seam that section 4 drives.
-- **§5 Multiplayer/PvP** — no networking, no shared queue, no sabotage. Section 2 keeps the order queue behind an interface and emits bounce-combo telemetry so both are addable later.
+- **§3 Economy & Upgrades** — no upgrade UI, no cash sinks, no upgrade data. §2 instead exposes the *runtime-mutable tuning* those upgrades will write to (§3.1).
+- **§4 Difficulty Scaling** — no time-based ramp. §2 ships an `IDifficultyProvider` seam (§3.2).
+- **§5 Multiplayer (PvP)** — no networking. §2 keeps the order queue behind an interface and emits bounce-combo telemetry (§3.3).
 - **§6 Roadmap** — no themes, no knife classes, no VIP customers.
 
-### Definition of done for section 2 (vertical slice)
+### Definition of done
 
-One playable scene where: the player drags and releases → a knife launches, bounces off the board walls, and slices ingredients → the ingredients credit the oldest demanding customer's order → that customer's visible patience bar drains in real time → completing an order pays cash into a wallet value shown on screen → an order that times out makes the customer leave angry and decrements reputation. Both mouse and touch work in parity.
-
----
-
-## 2. Current project state (verified)
-
-Verified by inspecting the repository, not assumed:
-
-| Fact | Value | Consequence for this plan |
-| --- | --- | --- |
-| Unity version | `6000.3.16f1` (`ProjectSettings/ProjectVersion.txt`) | Unity 6.3 LTS. `Rigidbody2D.velocity`/`drag`/`angularDrag` are **obsolete**; use `linearVelocity`/`linearDamping`/`angularDamping` ([upgrade notes](https://discussions.unity.com/t/june-doc-update/952463)). |
-| Render pipeline | URP `17.3.0`, 2D renderer (`Assets/Settings/Renderer2D.asset`) | 2D lights/shaders available; keep to URP 2D shaders. |
-| 2D packages | `com.unity.2d.sprite`, `2d.animation`, `2d.aseprite`, `2d.tilemap`, `2d.spriteshape` | Fully 2D workflow; sprites are the expected asset type. |
-| Input | `com.unity.inputsystem 1.19.0`; **`activeInputHandler: 1`** = Input System package only | Legacy `Input.GetMouseButton` / `Input.touches` **do not work**. Everything goes through `InputAction`. |
-| Input asset | `Assets/InputSystem_Actions.inputactions` with maps `Player` + `UI` only | Must add a board/gameplay action map (§5.2.1). |
-| `Assets/Scenes/` | `SampleScene.unity` only | Need a dedicated gameplay scene. |
-| Scripts | **None** — no `.cs` anywhere in `Assets/` | Greenfield; no migration concerns. |
-| UI | `com.unity.ugui 2.0.0` + `uielements` module | uGUI recommended for HUD and world-space patience bars (§6.5). |
-| Tests | `com.unity.test-framework 1.6.0` | EditMode/PlayMode tests are available and are the primary verification path (§10). |
-| `Physics2D` settings | gravity `(0, -9.81)`, `m_SimulationMode: 0` (FixedUpdate), `m_VelocityIterations: 8`, `m_PositionIterations: 3`, `m_VelocityThreshold: 1`, `m_MaxTranslationSpeed: 100`, `m_DefaultMaterial: {fileID: 0}` (none), `m_QueriesStartInColliders: 1`, multithreading off | Requires several deliberate setting changes + a `PhysicsMaterial2D` (§4.5). |
-| `TimeManager` | `Fixed Timestep: 0.02` (50 Hz), max timestep `0.3333` | At 40 u/s a body moves 0.8 u per step → tunneling is a real risk (§4.6). |
-| Layers / Tags | `TagManager.asset` has **no** custom tags and only Default/TransparentFX/IgnoreRaycast/Water/UI named | Must define the layer scheme (§4.3). |
-| Git | single commit `Initial check-in`; working tree has uncommitted URP-settings changes | Do not touch the existing uncommitted changes; this plan is doc-only. |
-
-**Note on Unity 6.3 2D physics:** 6.3 ships a new low-level API (Box2D v3) under `UnityEngine.LowLevelPhysics2D`. It is **additive and separate** — it does not interact with `Rigidbody2D`/`Collider2D`, which are unchanged and not deprecated ([Unity manual](https://docs.unity3d.com/6000.3/Documentation//Manual/2d-physics-api/2d-physics-api-introduction.html)). **This plan uses the classic `Rigidbody2D` API**, because component-based authoring plus prefabs plus `Physics2D` queries is the right fit for a GameObject game, and because the low-level API's replacement components are not shipping ([roadmap](https://discussions.unity.com/t/low-level-2d-physics-in-unity-6-3/1683247/95)). Revisit only if ingredient counts reach the hundreds.
+One playable scene where: a drag-and-release gesture launches the knife; it bounces off the board walls and slices ingredients; sliced ingredients credit the oldest demanding customer's order; that customer's patience bar drains visibly in real time and bands at 60 % / 30 %; completing an order adds cash to a HUD total; letting an order expire makes the customer leave angry and decrements reputation. Mouse and touch behave identically because they are the *same* gesture.
 
 ---
 
-## 3. Cross-section architecture constraints
+## 2. Project state and the constraints it imposes
 
-These are the seams section 2 must leave open. They are cheap now and expensive later.
+The full verified baseline is in [`README.md`](./README.md#baseline--verified-from-the-repository). Only the facts that shape §2's design are repeated here:
 
-### 3.1 Seams required by §3 (Economy & Upgrades)
-
-Every §3 upgrade is a write to tuning that section 2 reads:
-
-| §3 upgrade | Section 2 must read tuning at runtime, not bake it |
+| Fact | Consequence for this plan |
 | --- | --- |
-| Knife Speed | `launchMaxSpeed` / the launch power curve must come from a runtime-mutable tuning object, not constants. |
-| Knife Split Chance | The knife must be **pooled and multi-instance from day one** (`KnifeManager` owning N active knives). MVP launches one; the architecture must not assume "the knife". |
-| Ingredient Spawn Rate | `IngredientSpawner` must read target count / interval each tick from tuning; spawn weights must be data-driven. |
-| Customer Patience | Patience must be computed as `base × customer × difficulty × upgrade` multipliers resolved at spawn time. |
-| Sous-Chef Helpers | Launching must be callable **without input**: `KnifeManager.Launch(Vector2 velocity, LaunchSource source)` where `LaunchSource` is `Manual`/`Helper`. Auto-knives need no player involvement. |
+| Unity `6000.3.16f1`. `Rigidbody2D.velocity` / `.drag` / `.angularDrag` are **obsolete** — use `linearVelocity` / `linearDamping` / `angularDamping` ([upgrade notes](https://discussions.unity.com/t/june-doc-update/952463)). | Every code snippet must use the Unity 6 names. |
+| `activeInputHandler: 1` — Input System package only. | Legacy `Input.GetMouseButton` / `Input.touches` **do not work**. All input goes through `InputAction`. |
+| `Assets/InputSystem_Actions.inputactions` holds only the template `Player` and `UI` maps. | §2 adds a `Board` map (§5.2.1). |
+| `Fixed Timestep: 0.02` (50 Hz), `Maximum Allowed Timestep: 0.33333334`. | At 40 u/s a body travels **0.8 u per step** — tunneling is a real risk (§4.6), and the timestep is kept as-is (**D5**). |
+| `Physics2D`: gravity `(0, -9.81)`, `maxTranslationSpeed: 100`, no default material. | §4.5 changes three settings and adds two materials. |
+| **No custom layers** (`TagManager` shows only `Default`/`TransparentFX`/`Ignore Raycast`/`Water`/`UI`, indices 6–31 unnamed). | §4.3 creates four user layers at 8–11 (**D7**). |
+| Only `Assets/Scenes/SampleScene.unity` exists and only it is in the build list. | §4.4 creates `Game.unity` and adds it to the build list. |
+| The only script is `Assets/Scripts/GameManager.cs` — a 16-line empty stub, no namespace, no `.asmdef`, outside the planned `Scripts/Runtime/` tree. | Greenfield: no migration burden. The stub is **not** part of the design — it should be deleted or absorbed when `Scripts/Runtime/` is created (§4.1). |
+| `com.unity.test-framework 1.6.0` is installed. | EditMode / PlayMode tests are the primary verification path (§10), not optional. |
 
-### 3.2 Seams required by §4 (Difficulty Scaling)
+**On Unity 6.3 2D physics.** 6.3 ships a new low-level API (Box2D v3) under `UnityEngine.LowLevelPhysics2D`. It is **additive and separate** — it does not interact with `Rigidbody2D`/`Collider2D`, which are unchanged and not deprecated ([Unity manual](https://docs.unity3d.com/6000.3/Documentation//Manual/2d-physics-api/2d-physics-api-introduction.html)). **This plan uses the classic `Rigidbody2D` API**, because component-based authoring plus prefabs plus `Physics2D` queries is the right fit for a GameObject game, and because the low-level API's replacement components are not shipping ([roadmap](https://discussions.unity.com/t/low-level-2d-physics-in-unity-6-3/1683247/95)). Revisit only if ingredient counts reach the hundreds.
 
-- `IDifficultyProvider` with `float PatienceScale`, `float OrderSpawnIntervalScale`, `float IngredientDespawnPressure`. Ship `ConstantDifficultyProvider` (all 1.0) in section 2.
-- All scaling must be resolvable **per order at spawn time** and **per knife at launch time**, so difficulty can change mid-run without retroactively rewriting live state.
+---
 
-### 3.3 Seams required by §5 (PvP)
+## 3. Seams this plan must leave open
 
-- `IOrderQueue` interface; section 2 ships `LocalOrderQueue`. A 1v1/2v2 shared queue is a different implementation.
+These are cheap now and expensive later.
+
+### 3.1 Required by §3 (Economy & Upgrades)
+
+Every §3 upgrade is a *write to tuning that §2 reads*. None of them may require a code change.
+
+| §3 upgrade | What §2 must expose |
+| --- | --- |
+| Knife Speed | `launchMaxSpeed` and the launch power curve read through a runtime-mutable tuning object, never baked as constants. |
+| Knife Split Chance | `KnifeManager` **pooled and multi-instance from day one**, owning N active knives. MVP launches one; nothing may assume "the knife". |
+| Ingredient Spawn Rate | `IngredientSpawner` reads target count / interval / weights from config every tick, and never caches them in `Awake`. |
+| Customer Patience | `patienceDuration = base × customer × difficulty × upgrade`, resolved **once at spawn**. |
+| Sous-Chef Helpers | Launching callable **without input**: `KnifeManager.Launch(Vector2 velocity, LaunchSource source)` with `LaunchSource.Manual` / `.Helper`. |
+
+### 3.2 Required by §4 (Difficulty Scaling)
+
+- `IDifficultyProvider` exposing `PatienceScale` and `OrderSpawnIntervalScale`. §2 ships `ConstantDifficultyProvider` (all `1.0`).
+- Scaling must resolve **per order at spawn** and **per knife at launch**, so difficulty can change mid-run without retroactively rewriting live state.
+
+### 3.3 Required by §5 (PvP)
+
+- `IOrderQueue` as an interface; §2 ships `LocalOrderQueue`. A shared 1v1 / 2v2 queue is a second implementation.
 - Emit `KnifeBounced(knifeId, bounceIndex, position)` — the concept's sabotage trigger is "achieving specific bounce combos". Track it now, consume it later.
-- Ingredient spawning must accept an external "force-spawn this ingredient/obstacle at this position" request, so sabotage can inject bad ingredients into an opponent's board.
+- `IngredientSpawner` must accept an external *"force-spawn this ingredient/obstacle here"* request, so sabotage can inject hazards into an opponent's board.
 
 ---
 
@@ -90,117 +87,130 @@ Every §3 upgrade is a write to tuning that section 2 reads:
 
 ### 4.1 Folder & assembly layout
 
-Assembly definitions matter here because they make the test suite runnable in isolation and prevent the "everything references everything" tangle:
+Assembly definitions matter here because they make the test suite runnable in isolation and prevent the "everything references everything" tangle. One runtime assembly is **D3**, with its trade-off recorded in [`README.md`](./README.md#how-the-two-sections-divide-the-work).
 
 ```
 Assets/
   Scripts/
     Runtime/
-      SliceNServe.Runtime.asmdef          (references: Unity.InputSystem, UnityEngine.UI;
-                                           add Unity.TextMeshPro only if TMP is used directly)
-      Core/       GameEvents, Wallet, RunClock, TuningProvider, ServiceRegistry, GameBootstrap
-      Board/      BoardBounds, KnifeManager, KnifeController, KnifeLauncher, AimInput,
-                  TrajectoryPreview, IngredientSpawner, Ingredient, IngredientSlicer
-      Orders/     IOrderQueue, LocalOrderQueue, OrderInstance, OrderSpawner,
-                  CustomerController, CustomerView, PatienceSystem, DifficultyProvider
-      Data/       IngredientDefinition, DishDefinition, CustomerDefinition, BoardConfig
+      SliceNServe.Runtime.asmdef      (references: Unity.InputSystem, UnityEngine.UI)
+      Core/     GameEvents, Wallet, RunClock, RuntimeTuning, ServiceRegistry, GameBootstrap,
+                ViewportMath
+      Board/    BoardBounds, BoardViewportAdapter, KnifeManager, KnifeController, KnifeLauncher,
+                AimInput, TrajectoryPreview, IngredientSpawner, Ingredient, IngredientSlicer
+      Orders/   IOrderQueue, LocalOrderQueue, OrderInstance, OrderSpawner, PatienceSystem,
+                ConstantDifficultyProvider, ReputationService
+      UI/       SafeAreaFitter, OrderTicketHud, OrderTicketView, PatienceBar, CashReadout
+      Data/     IngredientDefinition, DishDefinition, CustomerDefinition, BoardConfig
     Tests/
-      EditMode/   SliceNServe.Tests.EditMode.asmdef   (references: Runtime, TestRunner)
-      PlayMode/   SliceNServe.Tests.PlayMode.asmdef   (references: Runtime, TestRunner)
-  Prefabs/      Knife.prefab, Ingredient.prefab, Customer.prefab, OrderTicket.prefab
-  ScriptableObjects/  Ingredients/, Dishes/, Customers/, BoardConfig.asset
-  Art/Placeholders/   circle.png, square.png, knife.png  (see §4.7)
-  Scenes/       Game.unity
-docs/plans/     this file
+      EditMode/ SliceNServe.Tests.EditMode.asmdef
+      PlayMode/ SliceNServe.Tests.PlayMode.asmdef
+  Prefabs/           Knife.prefab, Ingredient.prefab, OrderTicket.prefab
+  ScriptableObjects/ Ingredients/, Dishes/, Customers/, BoardConfig.asset
+  Art/Placeholders/  circle.png, square.png, knife.png
+  Scenes/            Game.unity
 ```
+
+`Core/ViewportMath.cs`, `Board/BoardViewportAdapter.cs`, `UI/SafeAreaFitter.cs` and the
+`Scripts/Runtime/UI/` folder are Section 1's three additions (§1 plan §4); they are listed here so
+the tree is complete in one place.
 
 ### 4.2 Namespaces
 
-`SliceNServe.Core`, `.Board`, `.Orders`, `.Data`. Data types are `[CreateAssetMenu]` ScriptableObjects so designers can author them without touching code.
+`SliceNServe.Core`, `.Board`, `.Orders`, `.UI`, `.Data`. Data types are `[CreateAssetMenu]` ScriptableObjects so designers can author them without touching code.
 
 ### 4.3 Layer scheme
 
-Tags are unnecessary; layers + the collision matrix carry the semantics. Add these to `ProjectSettings/TagManager.asset`:
+Tags are unnecessary; layers plus the collision matrix carry the semantics. Add to `ProjectSettings/TagManager.asset`:
 
 | Layer | Index | Who |
 | --- | --- | --- |
-| `Knife` | 8 | Knife prefab (dynamic `Rigidbody2D`) |
+| `Knife` | 8 | The knife prefab (dynamic `Rigidbody2D`) |
 | `Ingredient` | 9 | Ingredient prefabs (trigger colliders) |
 | `BoardWall` | 10 | Static board boundary colliders |
-| `Obstacle` | 11 | Future: §6 themes / §5 sabotage hazards |
+| `Obstacle` | 11 | Reserved: §6 themes / §5 sabotage hazards |
 
-> **Indices corrected from 6–9 to 8–11** during reconciliation with Section 1. `TagManager.asset`
-> in this project shows indices 0–7 are Unity's builtin reserved slots (`Default`, `TransparentFX`,
-> `Ignore Raycast`, `Water`, `UI` plus three unnamed); user layers conventionally start at 8.
-> The layer *names* above are unchanged. See `README.md` decision D7.
+> Indices 0–5 are Unity's builtin slots, so user layers start at 6 at the earliest; 8–11 leaves
+> room and follows convention. See **D7**.
 
-Collision matrix:
-- `Knife ↔ BoardWall`: **on** (this is the bounce).
-- `Knife ↔ Ingredient`: **off** in the matrix. The knife collects ingredients by explicit sweep query (§5.5), not by trigger callbacks — this keeps collision callbacks cheap and makes collection speed-proof.
+Collision matrix — set **exactly** these pairs and untick everything else:
+
+- `Knife ↔ BoardWall`: **on**. This is the bounce.
+- `Knife ↔ Ingredient`: **off**. The knife collects by explicit sweep query (§5.5), not by collision — this keeps collision callbacks cheap and makes collection speed-proof (**D6**).
 - `Ingredient ↔ everything`: **off**. Ingredients are non-physical pickups; they must never nudge the knife or each other.
-- `Obstacle ↔ Knife`: **on** (reserved).
+- `Knife ↔ Obstacle`: **on** (reserved).
 
 ### 4.4 Scene setup
 
 `Assets/Scenes/Game.unity`:
-- `Main Camera`: Orthographic, `orthographicSize = 5.4` (⇒ 10.8 world units tall, 19.2 wide at 16:9, matching the 1920×1080 default). Linear color space is already set.
-- `GameBootstrap` (single entry point) — constructs services, wires events, owns the run lifecycle.
-- `BoardBounds` — parent with four static `BoxCollider2D` walls on layer `BoardWall`.
-- `KnifeManager` + one `Knife.prefab` instance parked at the launcher.
-- `IngredientSpawner` + `Ingredient.prefab`.
-- `OrderSpawner` + `Customer.prefab` + a screen-space `Canvas` (HUD) and, per customer, a world-space `Canvas` for the patience bar.
-- Background quad/SpriteRenderer at z = +1 (behind gameplay), gameplay at z = 0, HUD canvas far in front.
 
-### 4.5 Physics 2D settings to change
+- `Main Camera`: Orthographic, `orthographicSize = 5.4` (⇒ 10.8 u tall, 19.2 u wide at 16:9, matching the 1920×1080 default). Linear colour space is already set. **Section 1's `BoardViewportAdapter` replaces this hardcoded value with the contain-fit policy (D8)** — which evaluates to exactly `5.4` at 16:9, so nothing here changes.
+- `GameBootstrap` — the single entry point: constructs the services, wires the events, owns the run lifecycle.
+- `BoardBounds` — a parent holding four static `BoxCollider2D` walls on layer `BoardWall`.
+- `KnifeManager` + a pooled `Knife.prefab`, parked at the launcher.
+- `IngredientSpawner` + `Ingredient.prefab`.
+- `OrderSpawner` + a screen-space `Canvas` (HUD).
+- A backdrop `SpriteRenderer` at `z = +1`; gameplay at `z = 0`; HUD canvas far in front.
+
+### 4.5 Physics 2D settings and materials
 
 | Setting | From | To | Why |
 | --- | --- | --- | --- |
-| Default Gravity | `(0, -9.81)` | `(0, 0)` | Top-down ping-pong board. See [decision D1](#11-decisions-requiring-sign-off). Keep `Rigidbody2D.gravityScale = 0` per body as belt-and-braces so a stray gravity change can't break the board. |
-| Max Translation Speed | `100` | `200` | It is a hard global clamp on body speed; our 40 u/s cap must never be silently clipped, and the clamp interacts badly with CCD. |
-| Velocity Threshold | `1` | keep `1` | Bounces below 1 u/s are treated as inelastic. Our minimum live speed is 3 u/s, so this never bites. |
+| Default Gravity | `(0, -9.81)` | **`(0, 0)`** | Top-down ping-pong board (**D10**). Keep `Rigidbody2D.gravityScale = 0` per body as belt-and-braces so a stray gravity change cannot break the board. |
+| Max Translation Speed | `100` | `200` | A hard global clamp on body speed; the 40 u/s cap must never be silently clipped, and the clamp interacts badly with CCD. |
+| Velocity Threshold | `1` | keep `1` | Bounces below 1 u/s are treated as inelastic. The minimum live speed is 3 u/s, so this never bites. |
 | Simulation Mode | Fixed Update | keep | Determinism and stable 50 Hz stepping. |
-| Velocity / Position Iterations | `8` / `3` | keep | Adequate; raise position iterations to `4` only if stacking artifacts appear. |
-| Use Multithreading (Job Options) | off | leave off for now | Revisit if ingredient count exceeds ~200. |
-| Default Material | none | leave none | Materials are assigned per-collider (§4.6) for explicit control. |
+| Velocity / Position Iterations | `8` / `3` | keep | Raise position iterations to `4` only if stacking artefacts appear. |
+| Use Multithreading (Job Options) | off | leave off | Revisit past ~200 ingredients. |
+| Default Material | none | leave none | Materials are assigned per-collider for explicit control. |
 
-Create two `PhysicsMaterial2D` assets:
-- `Assets/Settings/KnifeMaterial.physicsMaterial2D` — `friction = 0`, `bounciness = 1`.
-- `Assets/Settings/WallMaterial.physicsMaterial2D` — `friction = 0`, `bounciness = 1`.
+Create two `PhysicsMaterial2D` assets, each `friction = 0`, `bounciness = 1`:
+`Assets/Settings/KnifeMaterial.physicsMaterial2D` and `Assets/Settings/WallMaterial.physicsMaterial2D`.
 
-With friction 0 and bounciness 1 on both sides, the knife's trajectory is a clean mirror reflection and energy loss is **entirely under our explicit control** in code (§5.3), instead of being an emergent property of material mixing. Verify the material mixing rule in the Editor (Unity/Box2D takes the higher bounciness and the geometric mean of friction; the setting above makes it moot).
+With friction 0 and bounciness 1 on *both* sides the reflection is a clean mirror, so energy loss is
+entirely under our explicit control in code (§5.3) rather than an emergent property of Unity's
+material mixing. Confirm the mixing rule in the Editor once (Unity/Box2D takes the higher
+bounciness and the geometric mean of friction; the settings above make it moot).
 
 ### 4.6 Tunneling — the single biggest technical risk
 
-At the project's `Fixed Timestep = 0.02` and a knife cap of 40 u/s, the knife travels **0.8 world units per physics step**. Any collider thinner than that can be passed through in one step. A 0.5-unit wall *will* leak.
+At `Fixed Timestep = 0.02` and a 40 u/s cap, the knife travels **0.8 world units per physics step**.
+Any collider thinner than that can be passed through in one step; a 0.5 u wall *will* leak.
 
 Three defences, all of them:
 
-1. **Thick wall colliders.** Visual walls can be 0.25 u; the `BoxCollider2D` on `BoardWall` is **2.0 u thick**, offset outward so the *inner face* sits exactly on the play-area boundary. Thicker than the maximum per-step travel by 2.5×.
-2. **CCD on the moving body.** `KnifeController` sets `rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous`. Continuous mode sweeps against **static** colliders, which is exactly our wall case. (Plain `Discrete` would tunnel; `ContinuousDynamic` is only needed once moving obstacles exist in §5/§6, and is more expensive.)
-3. **Swept collection query for ingredients.** CCD does **not** apply to sensor/trigger overlaps, so a fast knife could pass an ingredient trigger between steps. Collection therefore uses an explicit sweep from the previous to the current position (§5.5).
+1. **Thick wall colliders.** Visual walls may be 0.25 u; the `BoxCollider2D` on `BoardWall` is **2.0 u thick**, offset outward so its *inner face* sits exactly on the play-area boundary — 2.5× the worst-case per-step travel.
+2. **CCD on the moving body.** `KnifeController` sets `collisionDetectionMode = CollisionDetectionMode2D.Continuous`. Continuous mode sweeps against **static** colliders, which is exactly the wall case. `Discrete` would tunnel; `ContinuousDynamic` is only needed once moving obstacles exist (§5/§6) and costs more.
+3. **Swept collection query for ingredients.** CCD does **not** apply to sensor/trigger overlaps, so a fast knife could pass an ingredient trigger between steps. Collection therefore uses an explicit sweep (§5.5).
 
-Also set `rb.interpolation = RigidbodyInterpolation2D.Interpolate` so the knife renders smoothly between 50 Hz physics steps.
+Also set `interpolation = RigidbodyInterpolation2D.Interpolate`, so the knife renders smoothly between 50 Hz steps on a 60 FPS display.
 
 ### 4.7 Placeholder art
 
-Section 2 must not block on art. Commit three tiny PNGs (a 64×64 white circle, a 64×64 white square, and a simple knife silhouette) into `Assets/Art/Placeholders/`, tinted per ingredient via `SpriteRenderer.color`. Ingredients get a `CircleCollider2D` trigger matching the sprite radius. Replace with real art later without touching code.
+§2 must not block on art. Commit three 64 × 64 PNGs (white circle, white square, knife silhouette) to
+`Assets/Art/Placeholders/`, imported as `Sprite Mode: Single`, tinted per ingredient via
+`SpriteRenderer.color`. Replace with real art later without touching code. Decide the Git LFS policy
+before importing anything binary — `.gitattributes` defines an `lfs` attribute but no path uses it.
 
 ---
 
-## 5. 2.1 — Ingredient Gathering (The Board)
+## 5. §2.1 — Ingredient Gathering (The Board)
 
 ### 5.1 Board model
 
 - The board is a closed rectangle: four seamless walls, **no internal corners** in MVP (internal geometry is a §6 theme concern).
-- Play area (`BoardConfig.worldBounds`): `Rect(-9.6, -5.4, 19.2, 10.8)`. The `BoardWall` collider inner faces sit exactly on this rectangle.
-- Ingredient zone (`BoardConfig.ingredientZone`): `Rect(-9.1, -3.3, 18.2, 8.2)` — inset 0.5 u on the left, right and top edges (keeping pickups clear of the screen edge) and **2.1 u on the bottom edge**, which reserves a clean launch corridor so no ingredient can spawn on top of the launcher.
-- Launcher anchor (`BoardConfig.launcherPosition`): bottom-centre `(0, -4.4)`. Clearance to the bottom wall's inner face is 1.0 u (satisfying §5.6), and the nearest possible ingredient edge is 0.6 u away, so a fresh knife never starts overlapping a pickup.
+- Play area (`BoardConfig.worldBounds`): `Rect(-9.6, -5.4, 19.2, 10.8)` (**D4**). The `BoardWall` collider inner faces sit exactly on this rectangle.
+- Ingredient zone (`BoardConfig.ingredientZone`): `Rect(-9.1, -3.3, 18.2, 8.2)` — inset 0.5 u left, right and top, and **2.1 u at the bottom**, reserving a clean launch corridor so no ingredient can spawn on top of the launcher.
+- Launcher anchor (`BoardConfig.launcherPosition`): bottom-centre `(0, -4.4)`. Clearance to the bottom wall is 1.0 u (§5.6) and the nearest possible ingredient edge is 0.6 u away, so a fresh knife never starts overlapping a pickup.
 
 ### 5.2 Launch: drag-and-release aiming
 
 #### 5.2.1 Input wiring
 
-The Input System has **no built-in `Drag` or `Swipe` interaction** — the stock 1.19 set is Default, Press, Hold, Tap, SlowTap, MultiTap ([interactions namespace](https://docs.unity3d.com/Packages/com.unity.inputsystem@1.19/api/UnityEngine.InputSystem.Interactions.html)). Drag-and-release is therefore implemented as **two actions with manual state tracking**, which is also the most portable approach:
+The Input System has **no built-in `Drag` or `Swipe` interaction** — 1.19 ships only Default, Press,
+Hold, Tap, SlowTap and MultiTap ([interactions namespace](https://docs.unity3d.com/Packages/com.unity.inputsystem@1.19/api/UnityEngine.InputSystem.Interactions.html)).
+Drag-and-release is therefore **two actions plus manual state tracking**, which is also the most
+portable approach:
 
 Add a `Board` action map to `Assets/InputSystem_Actions.inputactions`:
 
@@ -209,41 +219,42 @@ Add a `Board` action map to `Assets/InputSystem_Actions.inputactions`:
 | `Aim` | Value / Vector2 | `<Pointer>/position`, `<Touchscreen>/primaryTouch/position`, `<Pen>/position` | none — polled every frame |
 | `Launch` | Button | `<Mouse>/leftButton`, `<Touchscreen>/primaryTouch/press`, `<Pen>/tip` | `Press` (`PressAndRelease`) |
 
-`AimInput` then runs a tiny state machine driven by `Aim` + `Launch`:
-`Idle → (Launch.started) Dragging → (Launch.canceled) Release` firing `OnLaunch(Vector2 dragStart, Vector2 dragEnd)`.
-Because the pointer position is polled continuously, mouse and touch share one code path — no `#if UNITY_IOS` branches. Guard against multi-touch by binding only `primaryTouch` in MVP.
+`AimInput` runs a small state machine over them:
+`Idle → (Launch.started) Dragging → (Launch.canceled) Release`, firing `OnLaunch(Vector2 dragStart, Vector2 dragEnd)`.
+
+Because the pointer position is polled continuously, mouse, touch and pen share one code path — no
+`#if UNITY_IOS` branches. Binding only `primaryTouch` is the multi-touch guard; it is an *input-shape*
+guard, never a gameplay one (**D9**).
 
 #### 5.2.2 Drag-to-velocity mapping
 
-Wide dead-zone and generous max drag distance, since this is the core skill expression on both platforms:
-
 ```
-dragVector  = dragEnd - dragStart                       // world units, y-up
-power       = Mathf.Clamp01(dragVector.magnitude / maxDragLength)   // maxDragLength = 3.5 u
-launchDir   = -dragVector.normalized                     // pull-back slingshot (see D4)
-speed       = Mathf.Lerp(launchMinSpeed, launchMaxSpeed, powerEase(power))  // 8 → 22 u/s
-velocity    = launchDir * speed
+dragVector = dragEnd - dragStart                                     // world units, y-up
+power      = Mathf.Clamp01(dragVector.magnitude / maxDragLength)     // maxDragLength = 3.5 u
+launchDir  = -dragVector.normalized                                  // pull-back slingshot (D12)
+speed      = Mathf.Lerp(launchMinSpeed, launchMaxSpeed, powerEase(power))   // 8 → 22 u/s
+velocity   = launchDir * speed
 ```
 
-`powerEase` starts linear (`power`) and is a designer knob once feel is testable.
-A **dead-zone** of 0.35 u means a tap/short drag does not launch.
-The launch angle is also clamped so it is never within 4° of parallel to a wall (§5.6).
+`powerEase` starts linear and is a designer knob once feel is testable. A dead-zone of `0.35 u` means
+a tap or a short drag launches nothing. The launch angle is clamped so it is never within 4° of
+parallel to a wall (§5.6).
 
-Three distinct speed values, deliberately named so they cannot be confused:
+Three deliberately distinct speed values:
 
 | Name | Value | Meaning |
 | --- | --- | --- |
-| `launchMinSpeed` / `launchMaxSpeed` | 8 / 22 u/s | The **design** envelope a player can produce. 22 u/s ⇒ 0.44 u of travel per 0.02 s step, comfortably inside the 2.0 u wall thickness even before CCD. |
-| `speedHardCap` | 40 u/s | A **physics guard** applied after every bounce (§5.3). Unreachable by a single launch; it exists so a future §3 multiplier or §5 sabotage cannot push a body fast enough to defeat CCD. |
-| `minLiveSpeed` | 3 u/s | Below this the knife is spent and returns to the launcher (§5.3). |
+| `launchMinSpeed` / `launchMaxSpeed` | 8 / 22 u/s | The **design envelope** a player can produce. At 22 u/s the knife travels 0.44 u per 0.02 s step — well inside the 2.0 u wall thickness, even before CCD. |
+| `speedHardCap` | 40 u/s | A **physics guard** applied after every bounce (§5.3). Unreachable from a single launch; it exists so a future §3 multiplier or §5 sabotage cannot push a body fast enough to defeat CCD. |
+| `minLiveSpeed` | 3 u/s | Below this the knife is spent and returns (§5.3). |
 
 #### 5.2.3 Trajectory preview
 
 `TrajectoryPreview` draws a `LineRenderer` showing the first **2** bounces while dragging:
 
-- Pure geometric prediction: `Physics2D.Raycast` with `LayerMask` = `BoardWall` only, up to N reflections, `direction = Vector2.Reflect(direction, hit.normal)`, stopping at the wall-bounded segment budget.
-- This is a *preview*, not a simulation — it must not use `Physics2D.Simulate`, and it must ignore ingredients (so it stays honest about walls only). Documented as such in the tooltip so nobody "fixes" it into a physics prediction.
-- Fade the line with distance; hide it on release.
+- Pure geometric prediction: `Physics2D.Raycast` with `layerMask` = `BoardWall` only, up to N reflections, `direction = Vector2.Reflect(direction, hit.normal)`.
+- This is a *preview*, not a simulation: it must not call `Physics2D.Simulate`, and it deliberately ignores ingredients so it never lies about what the knife will hit. Say so in the tooltip, so nobody "fixes" it into a physics prediction.
+- Fade with distance; hide on release.
 
 #### 5.2.4 API shape
 
@@ -259,17 +270,16 @@ public sealed class KnifeManager : MonoBehaviour
 }
 ```
 
-`Launch` takes a **velocity, not a drag**, so §3's Sous-Chef helpers can call it with a computed aim vector and `LaunchSource.Helper` with zero input involvement.
+`Launch` takes a **velocity, not a drag**, so §3's Sous-Chef helpers can call it with a computed aim
+vector and `LaunchSource.Helper` with zero input involvement.
 
 ### 5.3 Bounce, energy and lifetime
 
-The knife prefab:
-
 | Part | Setup |
 | --- | --- |
-| Root | `Rigidbody2D` — `Body Type = Dynamic`, `gravityScale = 0`, `linearDamping = 0`, `angularDamping = 0.4` (spin is cosmetic only), `collisionDetectionMode = Continuous`, `interpolation = Interpolate`, material `KnifeMaterial`. |
-| Collider | **`CircleCollider2D`** on the root, `radius = 0.18`. A circle is chosen over a capsule **on purpose**: a bouncing body needs a *rotation-independent* silhouette, or spin makes the rebound direction unpredictable and the physics stop being learnable. |
-| Visual | `SpriteRenderer` on a **separate child** transform that spins freely, so the knife's spin animation never touches the collider. |
+| Root | `Rigidbody2D` — `Dynamic`, `gravityScale = 0`, `linearDamping = 0`, `angularDamping = 0.4` (spin is cosmetic), `collisionDetectionMode = Continuous`, `interpolation = Interpolate`, layer `Knife`, material `KnifeMaterial`. |
+| Collider | **`CircleCollider2D`**, radius `0.18`. A circle, not a capsule, **on purpose**: a bouncing body needs a rotation-independent silhouette, or spin makes the rebound unpredictable and the physics stop being learnable. |
+| Visual | A `SpriteRenderer` on a **separate child** that spins freely, so the spin animation never touches the collider. |
 | `KnifeController` | Owns bounce counting, energy retention, termination and the sweep query (§5.5). |
 
 Energy decay is explicit and applied post-step, in `OnCollisionEnter2D`:
@@ -306,7 +316,9 @@ void OnCollisionEnter2D(Collision2D c)
 }
 ```
 
-The `0.08` threshold is applied to the **outgoing** velocity, which is precisely the degenerate grazing case: the reflection is already near-tangent, so a few degrees is enough to break the loop without visibly kinking the trajectory.
+The `0.08` test is applied to the **outgoing** velocity, which is exactly the degenerate grazing case:
+the reflection is already near-tangent, so a few degrees breaks the loop without visibly kinking the
+trajectory.
 
 Termination — the knife ends its life when **any** of:
 
@@ -316,9 +328,12 @@ Termination — the knife ends its life when **any** of:
 | Lifetime exceeded | `> 15 s` | Hard anti-stall cap. |
 | Bounce cap | `> 60` | Anti-degenerate-loop cap. |
 
-On termination: `KnifeManager` plays a short fade, returns the knife to the launcher, and fires `KnifeReturned` → `CanLaunch = true`. `ReturnAllKnives()` exists for the §3 "wave clear" and for the §5 PvP round reset.
+On termination `KnifeManager` returns the knife to the launcher and fires `KnifeReturned`, setting
+`CanLaunch = true`. `ReturnAllKnives()` exists for §3's wave clear and §5's round reset.
 
-Starting numbers (~13 s of life from a full-power launch: `ln(3/22)/ln(0.9) ≈ 19` bounces, ~13–15 s with losses) are calibrated to feel like "one satisfying flurry" and are all `BoardConfig` fields.
+With `bounceRetention = 0.90` a full-power launch decays from 22 → 3 u/s in `ln(3/22)/ln(0.9) ≈ 19`
+bounces; with losses that is roughly 13–15 s of life. One satisfying flurry, and every number is a
+`BoardConfig` field.
 
 ### 5.4 Ingredients
 
@@ -326,23 +341,30 @@ Starting numbers (~13 s of life from a full-power launch: `ln(3/22)/ln(0.9) ≈ 
 
 | Field | Type | Purpose |
 | --- | --- | --- |
-| `id` | `string` | Stable key used by recipes and save data. Never the asset name. |
+| `id` | `string` | Stable key for recipes and save data. Never the asset name. |
 | `displayName` | `string` | UI. |
 | `sprite`, `tint` | `Sprite`, `Color` | Placeholder-friendly rendering. |
-| `radius` | `float` | Default `0.35`. Collider + spawn separation. |
-| `spawnWeight` | `float` | Weighted random in the spawn table. `0` ⇒ never spawns naturally (quest/roadmap-only ingredients). |
-| `slicesOnHit` | `bool` | Reserved: `false` = knocks the knife aside (obstacle behaviour, §6). Code path stubbed, unused in MVP. |
+| `radius` | `float` | Default `0.35`. Collider size and spawn separation. |
+| `spawnWeight` | `float` | Weighted-random weight. `0` ⇒ never spawns naturally (roadmap-only ingredients). |
+| `slicesOnHit` | `bool` | Reserved: `false` knocks the knife aside (obstacle behaviour, §6). Path stubbed, unused in MVP. |
+
+`Ingredient` prefab: `CircleCollider2D` with `isTrigger = true`, layer `Ingredient`, **no `Rigidbody2D`**,
+plus a `SpriteRenderer` **child** that bobs. The collider deliberately never moves — a static collider
+that moves forces broadphase rebuilds every frame, and a `Rigidbody2D` would buy nothing when nothing
+can push anything. This is the cheapest arrangement that still gives the swept cast something to hit.
 
 `IngredientSpawner`:
-- Fields: `targetCount = 12`, `respawnInterval = 0.6 s`, `maxCount = 18`, `minSeparation = 0.6 u`, `spawnWeights` from the definition assets.
+
+- Reads `targetCount = 12`, `respawnInterval = 0.6 s`, `maxCount = 18`, `minSeparation = 0.6 u` and the spawn weights from config **every tick** — never cached in `Awake`, so §3's spawn-rate upgrade is a config write (§3.1).
 - Each tick: if `liveCount < targetCount`, spawn up to `maxSpawnsPerTick` (default 2).
-- Placement: up to 8 rejection-sampling attempts at a random point in `ingredientZone` inset by `radius`, validated with `Physics2D.OverlapCircle(pos, radius + minSeparation, ingredientMask)` **before** instantiating the candidate. Failing all 8 attempts, defer to the next tick rather than force-placing — force-placing is exactly how you get stacks. (`Physics2D.queriesStartInColliders` is `1` in this project, but that setting only matters when a query filter includes the *querying object's own* layer. Our filter is the `Ingredient` layer exclusively and the candidate does not exist yet, so it is a non-issue here — and it is a non-issue for the knife's sweep in §5.5 for the same reason. It becomes an issue if somebody ever widens either filter to include the `Knife` layer.)
-- Despawn: ingredients that are not collected expire after `lifetime = 12 s` with a 1 s fade, so the board self-refreshes and the player can never be starved of a specific ingredient permanently. Expiry is a `BoardConfig` field because §4 may want to tighten it.
-- Reads all of the above from `RuntimeTuning` every tick (§3.1) — never caches the values in `Awake`.
+- Placement: up to 8 rejection-sampling attempts at a random point in `ingredientZone` inset by `radius`, validated with `Physics2D.OverlapCircle(pos, radius + minSeparation, ingredientMask)` **before** instantiating the candidate. Failing all 8, defer to the next tick rather than force-placing — force-placing is exactly how you get stacks.
+  (`Physics2D.queriesStartInColliders` is `1` here, but that only matters when a query filter includes the *querying object's own* layer. This filter is `Ingredient` alone and the candidate does not exist yet, so it is a non-issue — as it is for the knife's sweep in §5.5, for the same reason. It becomes an issue only if a filter is widened to include `Knife`.)
+- Despawn: uncollected ingredients expire after `lifetime = 12 s` with a 1 s fade, so the board self-refreshes and a scarce ingredient can never become permanently unobtainable.
 
 ### 5.5 Collection — swept, speed-proof
 
-Because the collision matrix has `Knife ↔ Ingredient` **off** and ingredients are triggers (which CCD does not sweep), collection is done by the knife itself, in `FixedUpdate`, over the segment it is about to travel:
+The knife collects, because the matrix deliberately does not connect it to ingredients (**D6**). Per
+`FixedUpdate`, over the segment it is about to travel:
 
 ```csharp
 void FixedUpdate()
@@ -356,55 +378,73 @@ void FixedUpdate()
 }
 ```
 
-Rationale: `Rigidbody2D.Cast` sweeps the knife's own colliders along the motion vector, so an ingredient anywhere on this step's path is found regardless of speed. This removes tunneling from the collection path entirely, and it is **testable headlessly** (§10) in a way that trigger callbacks are not.
+`Rigidbody2D.Cast` sweeps the knife's own colliders along the motion vector, so an ingredient anywhere
+on the step's path is found regardless of speed. That removes tunneling from the collection path
+entirely, and it is **testable headlessly** (§10) in a way trigger callbacks are not.
 
-On each hit: skip duplicates within the same step (a set keyed by collider instance id), then per ingredient —
-1. `IngredientSliced` event (`ingredientId`, world position, knife id, bounceIndex),
-2. combo counter `++` (reset on knife launch — this is the §5 sabotage telemetry),
-3. destroy the ingredient with a slice VFX + SFX,
-4. forward the ingredient id to the order system: `OrderQueueService.SubmitIngredient(ingredientId, count: 1)`.
+Implementation notes: `_results` is a preallocated `RaycastHit2D[]`; dedupe within the step with a
+preallocated set keyed on the collider's instance id; iterate with `for` over arrays, never
+`foreach` over a `List<T>`.
 
-Collection must never mutate the knife's velocity — ingredients are rewards, not obstacles. That keeps the skill expression purely about wall geometry and launch angle, and keeps §3's balance math linear.
+On each collected ingredient, in order:
 
-### 5.6 Anti-stall rules (make these explicit, they will bite)
+1. Publish `IngredientSliced(ingredientId, position)`.
+2. Increment the combo counter (reset per launch) — §5's sabotage telemetry.
+3. Release the ingredient to its pool with a slice VFX + SFX.
+4. Forward to the order system: `IOrderQueue.SubmitIngredient(ingredientId, 1)`.
 
-- Launch angle: clamp the aim so it is never within 4° of parallel to any wall, guaranteeing the first wall contact is never a graze.
-- The launcher keeps 1.0 u of clearance to the nearest wall (§5.1), so a fresh knife never self-collides with the boundary before the player's launch has even begun.
-- If the knife somehow ends up outside `worldBounds` (a physics failure), `KnifeController` detects it in `FixedUpdate` and force-returns — a safety net, not a mechanism.
-- `KnifeManager` refuses a `Launch` while `!CanLaunch`, so a double-tap cannot spawn two knives before §3's split upgrade exists.
+Collection must **never** mutate the knife's velocity. Ingredients are rewards, not obstacles — that
+keeps the skill expression purely about wall geometry and launch angle, and keeps §3's balance maths
+linear.
+
+### 5.6 Anti-stall rules
+
+These will bite. Make them explicit.
+
+- **Angle clamp.** Keep the launch direction at least 4° off parallel to any wall, so the first contact is never a graze.
+- **Clear spawn.** The launcher keeps 1.0 u to the nearest wall and 0.6 u to the nearest possible ingredient edge, so a fresh knife never starts overlapping anything.
+- **Outside-the-board failsafe.** If the knife ever ends up outside `worldBounds` (a physics failure), `KnifeController` detects it in `FixedUpdate` and force-returns it. A safety net, not a mechanism.
+- **Single live knife.** `KnifeManager` refuses `Launch` while `!CanLaunch`, so a double-tap cannot spawn two knives before §3's split upgrade exists.
+- **Zero-velocity guard.** If `linearVelocity` is ~zero, skip the cast — a zero-length cast direction silently returns nothing.
 
 ---
 
-## 6. 2.2 — Fulfilling Orders & Customer Patience
+## 6. §2.2 — Fulfilling Orders & Customer Patience
 
-### 6.1 Data model (ScriptableObjects)
+### 6.1 Data model
 
 **`DishDefinition`** — a recipe.
+
 | Field | Type | Notes |
 | --- | --- | --- |
-| `id`, `displayName`, `sprite` | | UI + stable key. |
-| `ingredients` | `List<IngredientRequirement>` | `{ IngredientDefinition ingredient; int count; }` — a dish may need 2 tomatoes. This is the *authored* shape; the runtime mirror with a mutable `fulfilled` counter is `OrderLine` (§6.2). |
+| `id`, `displayName`, `sprite` | | UI and stable key. |
+| `ingredients` | `List<IngredientRequirement>` | `{ IngredientDefinition ingredient; int count; }` — a dish may need 2 tomatoes. The *authored* shape; the runtime mirror with a mutable counter is `OrderLine`. |
 | `baseCash` | `int` | Reward before §3 multipliers. |
 | `baseOrderWeight` | `float` | Relative draw weight. |
 
-**`CustomerDefinition`** — an archetype (the extension point for §6's VIP/"boss" customers and for future PvP AI opponents).
+**`CustomerDefinition`** — an archetype, and the extension point for §6's VIP / "boss" customers.
+
 | Field | Type | Notes |
 | --- | --- | --- |
 | `id`, `displayName`, `spriteSet` | | |
-| `patienceMultiplier` | `float` | e.g. patient `1.4`, average `1.0`, impatient `0.6`. |
+| `patienceMultiplier` | `float` | Patient `1.4`, average `1.0`, impatient `0.6`. |
 | `tipMultiplier` | `float` | Reserved for §3. |
-| `orderCount` | `int` | How many dishes this customer wants (MVP: `1`). |
+| `orderCount` | `int` | Dishes this customer wants (MVP: `1`). |
 
-**`BoardConfig`** — one asset holding every number referenced in §5, so a designer can retune the whole board in one place.
+**`BoardConfig`** — one asset holding every number §5 and §6 reference, so a designer can retune the
+whole board in one place.
 
 ### 6.2 Order generation
 
 `OrderSpawner`:
-- Target concurrent customers `maxActiveOrders = 4`; spawn interval `6 s` (`× difficultyProvider.OrderSpawnIntervalScale`).
-- Pick a `CustomerDefinition` by weight, then a `DishDefinition` by weight, then build an `OrderInstance`.
-- Pick dishes **weighted towards ingredients currently abundant on the board** — a simple guard that keeps the game fair: weight each dish by `baseOrderWeight / (1 + missingIngredientPenalty)`. Without this, the RNG can hand out three dishes that need an ingredient the spawn table rarely produces, and the run dies to bad luck rather than bad play. Keep it as a small, tunable bias, not a hard rule.
 
-`OrderInstance` (plain C# runtime object, **not** a MonoBehaviour — this is what makes the logic unit-testable):
+- Target `maxActiveOrders = 4` concurrent; spawn every `6 s` × `difficultyProvider.OrderSpawnIntervalScale`.
+- Draw a `CustomerDefinition` by weight, then a `DishDefinition` by weight, then build the order.
+- **Fairness bias:** weight each dish by `baseOrderWeight / (1 + missingIngredientPenalty)`, where the penalty reflects how thinly the dish's ingredients are represented on the live board. Without it, the RNG can hand out three dishes needing an ingredient the spawn table rarely produces, and the run dies to bad luck rather than bad play. Keep it a small, tunable bias — never a hard rule.
+
+`OrderInstance` — plain C#, **not** a MonoBehaviour. That is what makes the whole of §2.2 unit-testable
+without a scene.
+
 ```
 Guid orderId; DishDefinition dish; CustomerDefinition customer;
 OrderLine[] lines;            // { IngredientDefinition ingredient; int required; int fulfilled; }
@@ -415,56 +455,70 @@ bool IsComplete => every line fulfilled >= required
 
 ### 6.3 Auto-credit rule
 
-`LocalOrderQueue.SubmitIngredient(ingredientId, count)` — the concept doc's "ingredients automatically contribute to completing their dishes":
+`LocalOrderQueue.SubmitIngredient(ingredientId, count)` — the concept doc's "ingredients automatically
+contribute to completing their dishes":
 
 1. Candidates = active orders with a line for `ingredientId` where `fulfilled < required`.
-2. Choose the target = **earliest `spawnTime`** (oldest customer first); tie-break on **fewest remaining units overall** (finish nearly-done dishes first).
+2. Target = the candidate with the **earliest `spawnTime`** (oldest customer first); tie-break on **fewest remaining units overall** (finish nearly-done dishes first).
 3. Credit one unit. If the order `IsComplete` → serve it (§6.6).
-4. If no candidate exists → fire `IngredientWasted(ingredientId, position)` for player feedback (a grey puff + soft "thud"). MVP discards it; see [D3](#11-decisions-requiring-sign-off) for the pantry alternative.
+4. No candidate ⇒ fire `IngredientWasted(ingredientId, position)` for feedback (a grey puff and a soft thud) and discard (**D11**).
 
-This is deliberately a pure function over a list of orders — the highest-value thing to unit-test in the whole section.
+This is deliberately a pure function over a list of orders — the highest-value thing in the whole
+section to unit-test.
 
 ### 6.4 Patience
 
-Resolved **once, at spawn**, so later tuning changes never retroactively rewrite a live customer (needed for §4 and for PvP fairness):
+Resolved **once, at spawn**, so a later tuning change never retroactively rewrites a live customer —
+required by §4 and for PvP fairness:
 
 ```
-patienceDuration = basePatienceSeconds            // BoardConfig, default 25 s
-                 * customer.patienceMultiplier     // CustomerDefinition
-                 * difficultyProvider.PatienceScale // §4 seam, 1.0 in section 2
-                 * tuning.patienceUpgradeMultiplier // §3 seam, 1.0 in section 2
+patienceDuration = basePatienceSeconds               // BoardConfig, default 25 s
+                 * customer.patienceMultiplier        // CustomerDefinition
+                 * difficultyProvider.PatienceScale   // §4 seam, 1.0 in §2
+                 * tuning.patienceUpgradeMultiplier   // §3 seam, 1.0 in §2
 ```
 
-Depletion is linear: `remainingPatience -= Time.deltaTime` in `Update`. A pure `PatienceSystem.Tick(remaining, delta)` helper does the math so it is testable without a frame loop.
-
-Patience bands drive all feedback:
+Depletion is linear — `remainingPatience -= delta` — with a pure `PatienceSystem.Tick(order, delta)`
+doing the arithmetic so it is testable without a frame loop.
 
 | State | Remaining | Feedback |
 | --- | --- | --- |
-| `Normal` | > 60% | Green bar, occasional idle animation. |
-| `Hurry` | 30–60% | Amber bar, faster pulse, first "impatient" animation trigger. |
-| `Critical` | < 30% | Red bar, shaking, ticking SFX, bar pulses in sync with SFX. |
+| `Normal` | > 60 % | Green bar, occasional idle animation. |
+| `Hurry` | 30–60 % | Amber bar, faster pulse, first "impatient" animation trigger. |
+| `Critical` | < 30 % | Red bar, shaking, ticking SFX, bar pulsing in sync. |
 | `Expired` | 0 | See §6.6. |
 
 ### 6.5 Views
 
-**`OrderTicketView`** (screen-space uGUI, one per active order, left→right in spawn order): dish icon, ingredient checklist with `fulfilled/required` counters and a checkmark per completed line, customer portrait, and the patience bar. Bind with **plain C# events** from the services, not per-frame polling — the service layer must be usable with zero UI present (that is what the tests do).
+**`OrderTicketView`** — screen-space uGUI, one per active order, left→right in spawn order: dish icon,
+ingredient checklist with `fulfilled/required` and a checkmark per satisfied line, customer portrait,
+and the patience bar. Bind with **plain C# events** from the services, never per-frame polling — the
+service layer must be usable with zero UI present, which is what the tests do.
 
-`CustomerView` (world-space): the sprite, an animation state machine (`Idle / Impatient / Critical / Angry / Happy`) reserved for real art, plus a small world-space bar. MVP can render patience **only** on the ticket and skip the world-space bar — decide with [D5](#11-decisions-requiring-sign-off).
+uGUI is the choice (**D15**) because `com.unity.ugui 2.0.0` is present, world-space bars are trivial,
+and tickets are a natural prefab. In Unity 6 TextMeshPro ships inside `com.unity.ugui`, so
+`Window → TextMeshPro → Import TMP Essential Resources` is a one-time setup step.
 
-uGUI is recommended over UI Toolkit here: `com.unity.ugui 2.0.0` is present, world-space persistence bars are trivial in uGUI, and Ticket views are a natural prefab. (Note: in Unity 6, TextMeshPro ships inside `com.unity.ugui`, so `Window > TextMeshPro > Import TMP Essential Resources` is a one-time setup step before the first ticket renders text.)
+`CustomerView` (world-space) — a sprite plus an animation state machine
+(`Idle / Impatient / Critical / Angry / Happy`), with no art dependency in §2. MVP renders patience
+**only** on the ticket (**D14**); a world-space bar is optional polish.
 
 ### 6.6 Serving and failing
 
-On completion (`OrderQueueService`):
-1. Mark `Served`; stop patience depletion.
-2. `wallet.Add(cash)` — cash = `dish.baseCash × customer.tipMultiplier × tuning.cashMultiplier`. `Wallet` here is a **minimal stub** (`int Amount`, `event Action<int> Changed`) that §3 will grow into the real economy; section 2 only needs the value and its change event to prove the loop closes.
-3. Fire `OrderServed(orderId, cashEarned)` → `CustomerView` plays happy + walks off; ticket animates out and frees its slot.
+On completion:
+
+1. Mark `Served`; stop depleting.
+2. `wallet.Add(cash)` where cash = `dish.baseCash × customer.tipMultiplier × tuning.cashMultiplier`. `Wallet` is a **minimal stub** (`int Amount`, `event Action<int> Changed`) that §3 grows into the real economy; §2 only needs the value and its change event to prove the loop closes.
+3. Fire `OrderServed(orderId, cashEarned)` → the customer reacts, the ticket animates out and frees its slot.
 
 On expiry:
-1. Mark `Expired`; the order leaves the queue, freeing a slot for a new customer.
+
+1. Mark `Expired`; the order leaves the queue, freeing a slot.
 2. Fire `OrderExpired(orderId, customerId)`.
-3. `ReputationService` decrements a run-level counter (`int Reputation`, default `3`), firing an event. MVP: at 0, log/flag a "game over" state and stop spawning — **no game-over screen**, that belongs to a later pass. The concept doc offers "lost revenue **or** lost lives/reputation" as alternatives; taking **reputation** is the recommendation because it makes failure legible and is reversible via §3 upgrades. Confirm with [D6](#11-decisions-requiring-sign-off).
+3. `ReputationService` decrements a run-level counter (`Reputation`, default `3`) and fires an event. At 0, stop spawning and flag game-over — **no game-over screen in §2** (**D13**).
+
+The concept doc offers "lost revenue **or** lost lives/reputation". Reputation is chosen because it is
+legible, visible on the HUD, and is where §3's upgrades acquire their value.
 
 ---
 
@@ -493,67 +547,85 @@ AimInput ──OnLaunch(dragStart, dragEnd)──► KnifeManager.Launch(velocit
                    Wallet.Add(cash)                ReputationService.Dec
 ```
 
-Every arrow is a plain C# event or a direct method call on an interface. No global singletons beyond the single `ServiceRegistry` created by `GameBootstrap`; no DI framework (adding one is a §3+ decision, not a section-2 need).
+Every arrow is a plain C# event or a direct call on an interface. The only container is the single
+`ServiceRegistry` created by `GameBootstrap`; no DI framework — adding one is a §3+ decision, not a §2
+need.
 
 ---
 
 ## 8. Implementation phases
 
-Ordered so each phase is independently runnable and verifiable. Each phase ends playable — never mid-refactor.
+Ordered so each phase is independently runnable and verifiable, and each ends playable — never
+mid-refactor. The runbook's steps map one-to-one onto these.
 
 | # | Phase | Deliverable | Acceptance criteria |
 | --- | --- | --- | --- |
 | 0 | **Foundations** | Folders, asmdefs, layers, `Physics2D` settings, materials, `Game.unity` with camera + walls, placeholder art | Play mode shows an empty walled board; an EditMode test assembly compiles and runs. |
-| 1 | **Launch** | `Board` action map, `AimInput`, `TrajectoryPreview`, `KnifeManager.Launch` | Mouse drag-and-release and touch drag-and-release both launch the knife; preview shows 2 bounces and matches the actual first bounce; a tap does nothing; launching while a knife is live is refused. |
-| 2 | **Bounce & lifetime** | `KnifeController` CCD, materials, retention, anti-stall, return | A 22 u/s launch never escapes the board over a 20 s headless simulation; the knife always terminates and `CanLaunch` returns true; bounce counter increments correctly. |
-| 3 | **Ingredients** | `IngredientDefinition`, `IngredientSpawner`, `Ingredient`, swept collection, VFX/SFX hooks | Board maintains ~12 ingredients; a knife passing an ingredient at max speed always collects it (headless test); ingredients never deflect the knife; uncollected ingredients expire. |
-| 4 | **Orders & patience** | `DishDefinition`/`CustomerDefinition`, `LocalOrderQueue`, `PatienceSystem`, `OrderTicketView`, `CustomerView` | Submitting ingredients credits the oldest demanding order; tickets update live; patience drains and bands change at 60%/30%; expiry removes the order and decrements reputation. |
-| 5 | **Slice glue & polish** | `Wallet`, `ReputationService`, HUD, run start/stop, difficulty seams, tests | The §1 done-criteria loop plays end to end; `ConstantDifficultyProvider` is wired; full EditMode + PlayMode suites green. |
+| 1 | **Launch** | `Board` action map, `AimInput`, `TrajectoryPreview`, `KnifeManager.Launch` | Mouse and touch drag-and-release both launch the knife; the preview shows 2 bounces and matches the actual first bounce; a tap does nothing; launching while a knife is live is refused. |
+| 2 | **Bounce & lifetime** | `KnifeController` CCD, materials, retention, anti-stall, return | A 22 u/s launch never escapes the board over a 20 s headless simulation; the knife always terminates and `CanLaunch` returns true; the bounce counter is correct. |
+| 3 | **Ingredients** | `IngredientDefinition`, `IngredientSpawner`, `Ingredient`, swept collection, VFX/SFX hooks | The board maintains ~12 ingredients; a knife passing an ingredient at max speed always collects it (headless test); ingredients never deflect the knife; uncollected ones expire. |
+| 4 | **Orders & patience** | `DishDefinition` / `CustomerDefinition`, `LocalOrderQueue`, `PatienceSystem`, `OrderTicketView` | Submitting ingredients credits the oldest demanding order; tickets update live; patience drains and bands change at 60 %/30 %; expiry removes the order and decrements reputation. |
+| 5 | **Slice glue & polish** | `Wallet`, `ReputationService`, HUD, run start/stop, difficulty seams, tests | The §1 done-criteria loop plays end to end; `ConstantDifficultyProvider` is wired; the full EditMode + PlayMode suites are green. |
 
 ---
 
-## 9. Tuning table (starting values, all in `BoardConfig` / data assets)
+## 9. Tuning table
+
+Starting values, all in `BoardConfig` or data assets. Nothing here is a code constant.
 
 | Parameter | Start | Raise it if… | Lower it if… |
 | --- | --- | --- | --- |
 | Board size | 19.2 × 10.8 u | — | gameplay feels slow |
-| Launcher position | `(0, -4.4)` | ingredients feel unreachable | knife has no room |
-| `launchMinSpeed` / `launchMaxSpeed` | 8 / 22 u/s | bounces feel mushy | knife is uncontrollable |
-| `speedHardCap` (physics guard) | 40 u/s | — | — |
+| Launcher position | `(0, -4.4)` | ingredients feel unreachable | the knife has no room |
+| `launchMinSpeed` / `launchMaxSpeed` | 8 / 22 u/s | bounces feel mushy | the knife is uncontrollable |
+| `speedHardCap` | 40 u/s | — | — |
 | `maxDragLength` | 3.5 u | mobile aim feels cramped | aim feels imprecise |
 | Dead-zone | 0.35 u | accidental launches | taps feel ignored |
-| `bounceRetention` | 0.90 | knife dies too fast | knife never ends (±0.02 steps) |
-| `minLiveSpeed` / lifetime / bounce cap | 3 u/s / 15 s / 60 | — | knife lingers |
-| Ingredient target / max / interval | 12 / 18 / 0.6 s | board looks empty | board is cluttered |
+| `bounceRetention` | 0.90 | the knife dies too fast | the knife never ends (±0.02 steps) |
+| `minLiveSpeed` / lifetime / bounce cap | 3 u/s / 15 s / 60 | — | the knife lingers |
+| Ingredient target / max / interval | 12 / 18 / 0.6 s | the board looks empty | the board is cluttered |
 | Ingredient radius / min separation / lifetime | 0.35 / 0.6 / 12 s | collection is fiddly | spawns fail often |
-| `maxActiveOrders` | 4 | HUD has room and difficulty is low | HUD is crowded |
-| Order spawn interval | 6 s | — | board can't keep up |
+| `maxActiveOrders` | 4 | the HUD has room and difficulty is low | the HUD is crowded |
+| Order spawn interval | 6 s | — | the board can't keep up |
 | `basePatience` | 25 s | too punishing | too easy |
-| Multi-ingredient dish share | ≤ 40% for the first 2 min | — | early game is unfair |
+| Multi-ingredient dish share | ≤ 40 % for the first 2 min | — | early game is unfair |
 | `Reputation` start | 3 | forgiving | tense |
 
 ---
 
 ## 10. Test strategy
 
-`com.unity.test-framework 1.6.0` is present, so verification does **not** require a human in the Editor. Two tiers:
+`com.unity.test-framework 1.6.0` is installed, so verification does **not** require a human in the
+Editor. Two tiers.
 
-**EditMode — pure logic, no scene, fast.** This is where the bulk of the value is, because the order and patience systems are deliberately plain C# objects:
-- `OrderCreditTests` — oldest-demander targeting; tie-break on fewest remaining; multi-unit recipes; no-match ⇒ `IngredientWasted` exactly once; a served order is never credited again; a completed order frees its slot.
-- `PatienceTests` — `base × customer × difficulty × upgrade`; band transitions at exactly 60% and 30%; expiry at exactly 0; an expired order stops depleting and never serves.
-- `DifficultyTests` — `ConstantDifficultyProvider` returns 1.0; a fake provider provably changes `patienceDuration` at spawn time and **not** on already-spawned orders.
-- `SpawnTableTests` — seeded RNG produces the expected weighted distribution within tolerance; `spawnWeight = 0` never appears; dish-draw bias reduces the "unreachable ingredient" rate.
-- `AimMathTests` — drag length → speed mapping and clamping; dead-zone; pull-back vs direct direction; the parallel-to-wall clamp.
+**EditMode — pure logic, no scene, fast.** The bulk of the value, because the order and patience
+systems are deliberately plain C# objects.
 
-**PlayMode/headless physics — the things a human would otherwise have to eyeball.** Use a dedicated scene plus `PhysicsScene2D` with `Physics2D.simulationMode = SimulationMode2D.Script` and manual `physicsScene.Simulate(0.02f)` stepping. This gives deterministic, editor-independent, fast tests — and a future, non-flaky home for CI:
-- **Tunneling guard**: launch at 40 u/s (above the designed cap, on purpose) for 1,000 steps; assert the knife's position never leaves `worldBounds` by more than a collider radius.
-- **Collection at speed**: place an ingredient trigger directly on a 40 u/s path; assert it is collected in the single step that crosses it (this is the test that fails if somebody replaces the swept query with `OnTriggerEnter2D`).
-- **Energy math**: assert the speed after N synthetic bounces equals `v × retention^N` within epsilon.
-- **Anti-stall**: assert a launched knife always reaches a terminal state within `lifetime + 1 s` of simulated time.
+| Fixture | Asserts |
+| --- | --- |
+| `OrderCreditTests` | oldest-demander targeting; tie-break on fewest remaining; multi-unit recipes; no-match ⇒ exactly one `IngredientWasted`; a served order is never credited again; a completed order frees its slot. |
+| `PatienceTests` | `base × customer × difficulty × upgrade`; band transitions at exactly 60 % and 30 %; expiry at exactly 0; an expired order stops depleting and never serves. |
+| `DifficultyTests` | `ConstantDifficultyProvider` returns 1.0; a fake provider provably changes `patienceDuration` at spawn time and **not** for already-spawned orders. |
+| `SpawnTableTests` | seeded RNG produces the expected weighted distribution within tolerance; `spawnWeight = 0` never appears; the fairness bias reduces the "unreachable ingredient" rate. |
+| `AimMathTests` | drag length → speed mapping and clamping; dead-zone; slingshot direction; the parallel-to-wall clamp. |
+| `ViewportMathTests` | the §1 aspect table (Section 1's fixture, listed here because both sections run in one suite). |
 
-Editor-independent physics results are *not* guaranteed to be bit-identical across platforms (Box2D is deterministic for a given binary/platform/order, not universally), so **assert invariants and bounds, never exact trajectories.** This is the single most important guideline for keeping this suite green.
+**PlayMode — physics, deterministically stepped.** A dedicated scene with
+`Physics2D.simulationMode = SimulationMode2D.Script` and manual `physicsScene.Simulate(0.02f)`
+stepping, so results are editor-independent and fast — and a future, non-flaky home for CI.
 
-Run command for a future session:
+| Test | Asserts |
+| --- | --- |
+| Tunneling guard | a launch at 40 u/s (above the design cap, on purpose) over 1,000 steps never leaves `worldBounds` by more than a collider radius. |
+| Collection at speed | an ingredient trigger on a 40 u/s path is collected **in the single step that crosses it** — the test that fails the moment somebody replaces the swept cast with `OnTriggerEnter2D`. |
+| Energy maths | the speed after N synthetic bounces equals `v × 0.90^N` within epsilon. |
+| Anti-stall | a launched knife always reaches a terminal state within `lifetime + 1 s` of simulated time. |
+| No-GC steady state | no GC allocation across a scripted 5 s run, enforcing the §1 budget. |
+
+> Assert **invariants and bounds, never exact trajectories.** Box2D is deterministic for a given
+> binary and platform, not universally, so exact-position assertions are how this suite rots.
+
+Headless run:
 
 ```
 "C:\Program Files\Unity\Hub\Editor\6000.3.16f1\Editor\Unity.exe" ^
@@ -561,40 +633,44 @@ Run command for a future session:
   -runTests -testPlatform EditMode -testResults "%TEMP%\editmode.xml" -logFile -
 ```
 
-Manual verification checklist for the phases that are genuinely about feel (must be done in the Editor, by a human):
-1. Mouse drag from the launcher → preview appears and matches the real first bounce.
-2. Same on a touch device/Device Simulator (`com.unity.device-simulator.devices` is installed) — aim is not occluded by the finger.
-3. A full-power launch lasts roughly 10–15 s and never gets stuck on a wall or in a loop.
-4. Ingredient slices feel responsive: no ingredient is ever visually passed through.
-5. A ticket's patience bar, its band colour changes, and the customer's reaction all agree with what actually happened.
+**Manual checks** for the parts that are genuinely about feel, done in the Editor by a human:
+
+1. Mouse drag from the launcher → the preview appears and matches the real first bounce.
+2. The same drag on the Device Simulator's touch path — the aim is not occluded by the finger.
+3. A full-power launch lasts ~10–15 s and never gets stuck on a wall or in a loop.
+4. Ingredient slices feel responsive: nothing is ever visually passed through.
+5. A ticket's patience bar, its band colour changes, and the customer's reaction agree with what actually happened.
 
 ---
 
-## 11. Decisions requiring sign-off
+## 11. Decisions
 
-| # | Decision | Recommended | Alternative | Why it matters |
-| --- | --- | --- | --- | --- |
-| **D1** | Board gravity | **Zero-g `(0,0)`** — pure Pong; skill = wall geometry | Gravity `≈ -0.6 × gravityScale` — pinball/Peggle feel, arcing and drops | Changes the entire feel and every tuning constant. The doc says both "ping-pong" and "pinball". Zero-g is recommended because aiming is *predictable*, which the drag-and-release control scheme depends on. Keep `gravityScale` a `BoardConfig` field so the alternative is one asset edit, not a rewrite. |
-| **D2** | Ingredients solid or non-solid | **Non-solid** (triggers, collected via sweep) | Solid dynamic bodies that knock the knife around | Solid is more chaotic and juicy; non-solid makes skill legible and §3 upgrade math linear. The `slicesOnHit` flag leaves the solid path open for §6 obstacles. |
-| **D3** | Ingredient overflow | **Discard** + wasted feedback, per the doc's "automatically contribute" | A small pantry buffer (e.g. 5 per ingredient) usable by later orders | A pantry adds strategy and reduces frustration but complicates the auto-credit rule and the UI. MVP-discard is simpler and matches the doc literally. |
-| **D4** | Aim direction convention | **Pull-back slingshot** (drag away from the target) | Direct (drag toward the target) | Slingshot keeps the finger off what you are aiming at — significant on mobile. Both are ~10 lines to swap, but pick one now so tuning and tutorials are written against it. |
-| **D5** | Patience bar location | **Ticket only** for MVP | Ticket + world-space bar above each customer | The doc says "each customer has a visible patience bar" — a ticket bar satisfies it, but a world-space bar may be what "visible" means to a reader of the doc. |
-| **D6** | Failure mode | **Reputation** (3 lives), decrement per expiry | Lost revenue only | The doc offers both. Reputation is legible and is where §3 upgrades get their value. |
-| **D7** | Aim preview detail | **2 bounce reflections**, walls only | 0 (raw direction arrow) or unlimited | More bounces = more help. 2 is a good default; it is a single `BoardConfig` int. |
+The rationale for the decisions this section owns. The decisions themselves are in
+[`README.md`](./README.md#locked-decisions); nothing is decided here.
 
-Additional open questions (not blockers, resolve during implementation):
+| # | Question | Choice, and why |
+| --- | --- | --- |
+| **D10** | Board gravity | **Zero-g.** The doc says both "ping-pong" and "pinball"; zero-g is chosen because aiming must be *predictable*, and the drag-and-release scheme depends on that. It also removes a whole class of device-dependent variance. *Alternative: gravity ≈ −0.6 × gravityScale for an arcing, Peggle-like feel — one asset edit away, which is why `gravityScale` stays a config field.* |
+| **D11** | Ingredient overflow | **Discard.** The doc's "automatically contribute to completing their dishes" is imperative, so there is no player choice to make. A pantry adds strategy and reduces frustration but complicates both the credit rule and the UI. *Revisit in §3.* |
+| **D12** | Aim direction | **Pull-back slingshot.** It keeps the finger off what you are aiming at, which matters most on mobile. Both conventions are ~10 lines, but pick one now so tuning and tutorials are written against it. |
+| **D13** | Failure mode | **Reputation**, 3 lives. The doc offers lost revenue *or* reputation; reputation is legible, visible on the HUD, and gives §3's upgrades something to protect. |
+| **D14** | Patience bar location | **Ticket only.** It satisfies "each customer has a visible patience bar"; a world-space bar is polish, not a requirement. |
+| **D15** | UI stack | **uGUI.** Present in the project, prefab-able tickets, trivial world-space bars. The escape hatch is that the service layer must run with zero UI present, so a later swap is confined to one folder. |
 
-- Should a returned knife auto-relaunch when §3 helpers exist, or always wait for input? (MVP: always wait — `LaunchSource` already distinguishes the paths.)
-- Should the board's ingredient despawn pressure tighten over time in section 2, or is that strictly §4? (Plan assumes strictly §4 via `IDifficultyProvider`.)
-- Do we need a pantry/order UI affordance for dishes with 3+ ingredient types at 1920×1080 with 4 concurrent orders? Resolve with a layout spike in Phase 4 before building the final ticket prefab.
+### Open questions, not blockers
+
+- Should a returned knife auto-relaunch once §3's helpers exist, or always wait for input? (MVP: always wait — `LaunchSource` already distinguishes the paths.)
+- Should ingredient despawn pressure tighten over time in §2, or is that strictly §4? (This plan assumes strictly §4, via `IDifficultyProvider`.)
+- Is a pantry / order UI affordance needed for dishes with 3+ ingredient types at 1920×1080 with 4 concurrent orders? Resolve with a layout spike in Phase 4, before building the final ticket prefab.
+- O3 (frame-rate cap) is still open — see [`README.md`](./README.md#open-decisions).
 
 ---
 
-## 12. Things to verify in the Editor before relying on them
+## 12. Verify in the Editor before relying on it
 
-Flagged honestly, because they could not be verified from the repository alone:
+Flagged honestly, because none of it could be verified from the repository alone:
 
-1. **`PhysicsMaterial2D` mixing** — that bounciness 1 on both the knife and the walls yields a fully elastic bounce in this Unity version. Mitigation: energy decay is applied explicitly in code, so even if mixing differs, feel is controllable.
-2. **`Rigidbody2D.Cast` with `ContactFilter2D.useTriggers = true`** — confirm it returns trigger colliders on the `Ingredient` layer from a `Knife`-layer body. If it does not, fall back to `Collider2D.Cast` on the knife's own collider.
-3. **`PhysicsScene2D.Simulate`** behaviour in EditMode tests on this version (particularly whether a `Rigidbody2D` in a scene created via `SceneManager.CreateScene` is picked up). If not, move the physics tests to PlayMode.
+1. **`PhysicsMaterial2D` mixing** — that bounciness 1 on both surfaces yields a fully elastic bounce in this version. Mitigation: energy decay is applied explicitly in code, so feel stays controllable either way.
+2. **`Rigidbody2D.Cast` with `ContactFilter2D.useTriggers = true`** — that it returns trigger colliders on the `Ingredient` layer from a `Knife`-layer body. If it does not, fall back to `Collider2D.Cast` on the knife's own collider.
+3. **`PhysicsScene2D.Simulate`** in EditMode tests (whether a `Rigidbody2D` in a scene created via `SceneManager.CreateScene` is picked up). If not, move the physics tests to PlayMode.
 4. **Whether `CollisionDetectionMode2D.Continuous` alone is sufficient** at 40 u/s in this build, or whether the 2.0 u walls are also load-bearing. The tunneling test in §10 answers this empirically — that is why it launches *above* the design cap.

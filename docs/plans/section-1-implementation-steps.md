@@ -3,62 +3,38 @@
 > Plan: [`section-1-game-overview.md`](./section-1-game-overview.md). This file is the *how*.
 > Sibling: [`section-2-core-mechanics.md`](./section-2-core-mechanics.md) owns **Phase 0
 > Foundations** — folders, assembly definitions, layers, `Physics2D` settings, materials,
-> `Game.unity`, the `Board` action map, `BoardConfig`.
+> `Game.unity`, the `Board` action map, `BoardConfig`. Its runbook is
+> [`section-2-implementation-steps.md`](./section-2-implementation-steps.md).
 >
-> **Nothing here has been applied to the project yet.** Every step is meant to be performed by
-> hand in the Unity Editor or a shell.
+> **Nothing here has been applied to the project yet.** Every step is performed by hand in the Unity
+> Editor or a shell.
 >
 > Unity Editor version: **6000.3.16f1**.
-
----
-
-## What this runbook deliberately does *not* do
-
-The first draft of Section 1 claimed the whole project skeleton. That ground now belongs to
-Section 2's Phase 0, so **do not** do any of the following from this document:
-
-| Don't | Because |
-| --- | --- |
-| Create an `Assets/_Project/` tree | §2 uses `Assets/{Scripts/Runtime,Prefabs,ScriptableObjects,Art,Scenes}` |
-| Create five assemblies (`Core`/`Gameplay`/`UI`/`App`/`Editor`) | §2 uses one `SliceNServe.Runtime.asmdef` plus two test assemblies |
-| Change `Time → Fixed Timestep` to `1/60` | §2 keeps `0.02` (50 Hz) and justifies it |
-| Create layers at indices 6–9 | Those are Unity's builtin slots; §2's scheme moves to 8–11 |
-| Delete `Assets/Scenes/SampleScene.unity` or `Assets/Settings/` | §2 Phase 0 owns scene and physics-asset setup |
-| Set `Physics2D` gravity, materials, or iteration counts | §2 §4.5 |
-
-The three things this runbook *does* add on top of Phase 0 are listed in the plan, §4.
+>
+> **Scope.** §1 adds exactly three things to §2's Phase 0 — `ViewportMath` + `BoardViewportAdapter`,
+> `SafeAreaFitter`, and the player/platform settings. Do **not** create the folder tree, assemblies,
+> layers, `Physics2D` settings or `Game.unity` from this document; those are §2 Phase 0, and
+> duplicating them is how the two sections ended up describing two different projects.
 
 ---
 
 ## Step 0 — Preflight
 
-1. Confirm the Editor version is `6000.3.16f1` (`ProjectSettings/ProjectVersion.txt`). Opening
-   the project with a different version silently rewrites `ProjectSettings/`.
+1. Confirm the Editor version is `6000.3.16f1` (`ProjectSettings/ProjectVersion.txt`). Opening the project with a different version silently rewrites `ProjectSettings/`, producing a large meaningless diff.
 2. Confirm these modules are installed (Unity Hub → Installs → gear → Add Modules):
-   - **Android Build Support** + *OpenJDK* + *Android SDK & NDK Tools* — required for Step 5.4.
-   - **Windows Build Support (IL2CPP)** — required for Step 5.4's IL2CPP build.
-   - iOS Build Support is **not** required (§1 configures iOS but does not build it).
-3. The working tree currently has uncommitted template-import changes:
-   `.vscode/settings.json`, `Assets/Settings/UniversalRP.asset`, `Packages/manifest.json`,
-   `Packages/packages-lock.json`, `ProjectSettings/ShaderGraphSettings.asset`,
-   `ProjectSettings/URPProjectSettings.asset`, `ProjectSettings/PackageManagerSettings.asset`.
+   - **Android Build Support** + *OpenJDK* + *Android SDK & NDK Tools* — required by Step 5.4.
+   - **Windows Build Support (IL2CPP)** — required by Step 5.4's IL2CPP build.
+   - iOS Build Support is **not** required: §1 configures iOS but does not build it.
+3. Confirm the template import is already committed — `git status --short` should be empty. It was committed as `create GameManager` alongside an unrelated stub; there is nothing left to commit before starting.
 
-**Commit the template import as its own commit first:**
-
-```bash
-git add -A
-git commit -m "Import URP 2D template baseline (Unity 6000.3.16f1)"
-```
-
-> Why: with the template noise committed separately, every later diff contains only real work.
-
-**Verify:** `git status --short` is empty.
+**Verify:** the version matches, the modules are present, and `git status --short` is empty.
 
 ---
 
 ## Step 1 — Platform & player settings
 
-**Goal:** landscape-only, correctly identified builds on both platforms. (Workstream F2)
+**Goal:** landscape-only, correctly identified builds on both platforms. (F2)
+
 Open `Project Settings → Player`.
 
 ### 1.1 Resolution and Presentation — the important one
@@ -75,12 +51,11 @@ Open `Project Settings → Player`.
 | Run In Background | on (dev convenience; revisit at ship) |
 
 > **This is the highest-value change in Section 1.** The project currently has
-> `defaultScreenOrientation: 4` = Auto Rotation with all four orientations allowed. On a phone
-> that renders a portrait frame around a 19.2 × 10.8 landscape board — a broken build, not a
-> layout bug you patch later.
+> `defaultScreenOrientation: 4` — Auto Rotation with all four orientations allowed. On a phone that
+> renders a portrait frame around a 19.2 × 10.8 landscape board: a broken build, not a layout bug.
 >
-> Keep **both** landscape orientations rather than hard-locking to `Landscape Left`: a player
-> holding the phone with the charging port on the right would otherwise see the game upside down.
+> Keep **both** landscape orientations rather than hard-locking `Landscape Left`. A player holding
+> the phone with the charging port on the right would otherwise see the game upside down.
 
 ### 1.2 Shared identity
 
@@ -96,12 +71,12 @@ Open `Project Settings → Player`.
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| Color Space | **Linear** | URP requires it; Gamma renders visibly wrong with 2D lights |
+| Color Space | **Linear** | already set (`m_ActiveColorSpace: 1`); URP requires it and Gamma renders 2D lights visibly wrong |
 | Auto Graphics API | on | D3D11/12 on Windows, Vulkan + GLES3 on Android |
 | Scripting Backend | **IL2CPP** on Android and iOS; Windows may stay `Mono` for iteration speed | IL2CPP is mandatory for ARM64 |
 | Api Compatibility Level | `.NET Standard 2.1` | modern default; nothing here needs `.NET Framework` |
-| Managed Stripping Level | `Low` now, `Medium` at ship | aggressive stripping + reflection is a classic shipping-week bug |
-| **Incremental GC** | **on** | required to have any chance at the zero-allocation budget (plan §8) |
+| Managed Stripping Level | `Low` now, `Medium` at ship | aggressive stripping plus reflection is a classic shipping-week bug |
+| **Incremental GC** | **on** | required to have any chance at the zero-allocation budget (§8) |
 | Active Input Handling | `Input System Package (New)` | already correct (`activeInputHandler: 1`) |
 | Prebake Collision Meshes | off | no meshes |
 
@@ -110,15 +85,15 @@ Open `Project Settings → Player`.
 | Setting | Value | Note |
 | --- | --- | --- |
 | Minimum API Level | `25` (Android 7.1) | already set |
-| Target API Level | `Automatic (highest installed)` | Play Store requires a recent target |
+| Target API Level | `Automatic (highest installed)` | the Play Store requires a recent target |
 | **Target Architectures** | **ARM64 only** | already `AndroidTargetArchitectures: 2` |
 | Scripting Backend | IL2CPP | required for ARM64 |
 | **Render Outside Safe Area** | **on** (keep the current value) | the board and backdrop should fill the physical display; only the *UI* respects the safe area — that is what `SafeAreaFitter` (Step 4) is for |
 | Start In Fullscreen | on | already set |
 | Optimized Frame Pacing | on | steadier frame delivery on mid-tier devices |
 
-> Do **not** tick `ARMv7` "just in case". Google Play requires 64-bit, ARMv7 doubles build time,
-> and no device in the supported range needs it.
+> Do **not** tick `ARMv7` "just in case". Google Play requires 64-bit, ARMv7 doubles build time, and
+> no device in the supported range needs it.
 
 ### 1.5 iOS tab
 
@@ -130,16 +105,15 @@ Open `Project Settings → Player`.
 | Target SDK | `Device SDK` |
 | Signing Team ID | leave empty — §1 does not build iOS |
 
-**Verify:** switch the active build target to **Android** (`File → Build Profiles`) and let the
-Editor recompile. The Console must show no *"scripting backend not supported"* or
-*"architecture"* warnings. Then confirm `ProjectSettings/ProjectSettings.asset` no longer has
-`defaultScreenOrientation: 4`.
+**Verify:** switch the active build target to **Android** (`File → Build Profiles`) and let the Editor
+recompile. The Console must show no *"scripting backend not supported"* or *"architecture"* warnings.
+Then confirm `ProjectSettings/ProjectSettings.asset` no longer has `defaultScreenOrientation: 4`.
 
 ---
 
 ## Step 2 — `ViewportMath` + tests
 
-**Goal:** the aspect policy as pure, testable math. (F3)
+**Goal:** the aspect policy as pure, testable maths. (F3)
 
 This is the one piece of §1 with real logic in it, so it is written first and tested first.
 
@@ -204,8 +178,7 @@ namespace SliceNServe.Core
 
 ### 2.2 `Assets/Scripts/Tests/EditMode/ViewportMathTests.cs`
 
-The `SliceNServe.Tests.EditMode` assembly already exists from §2 Phase 0 — this only adds a file
-to it.
+The `SliceNServe.Tests.EditMode` assembly is created by §2 Phase 0 — this only adds a file to it.
 
 ```csharp
 using NUnit.Framework;
@@ -307,10 +280,8 @@ namespace SliceNServe.Tests
 
 `BoardViewportAdapter` reads `SliceNServe.Data.BoardConfig`, which §2 Phase 0 creates.
 
-- **If Phase 0 has landed:** just reference the existing asset.
-- **If you are doing §1 first:** create `Assets/Scripts/Runtime/Data/BoardConfig.cs` with only
-  the field §1 needs. §2 will extend this same class with its tuning fields — do not create a
-  second config type.
+- **If Phase 0 has landed:** reference the existing asset.
+- **If you are doing §1 first:** create `Assets/Scripts/Runtime/Data/BoardConfig.cs` with only the field §1 needs. §2 extends this same class with its tuning fields — **do not create a second config type.**
 
 ```csharp
 using UnityEngine;
@@ -331,8 +302,8 @@ namespace SliceNServe.Data
 }
 ```
 
-Create the asset: `right-click in Assets/ScriptableObjects/ → Create → Slice & Serve → Board Config`,
-name it `BoardConfig`. Leave the default `worldBounds`.
+Create the asset: right-click in `Assets/ScriptableObjects/` → **Create → Slice & Serve → Board
+Config**, name it `BoardConfig`, and leave the default `worldBounds`.
 
 ### 3.2 `Assets/Scripts/Runtime/Board/BoardViewportAdapter.cs`
 
@@ -406,21 +377,19 @@ namespace SliceNServe.Board
 }
 ```
 
-> `[ExecuteAlways]` is deliberate: the policy must be verifiable in the Scene view while dragging
-> the Game view's aspect dropdown, not only in Play mode.
+> `[ExecuteAlways]` is deliberate: the policy must be verifiable in the Scene view while dragging the
+> Game view's aspect dropdown, not only in Play mode.
 
 ### 3.3 Attach it
 
-1. Open `Assets/Scenes/Game.unity` (created by §2 Phase 0; if §1 runs first, create it with a
-   single orthographic `Main Camera` at `(0, 0, -10)`).
+1. Open `Assets/Scenes/Game.unity` (created by §2 Phase 0; if §1 runs first, create it with a single orthographic `Main Camera` at `(0, 0, -10)`).
 2. Add `BoardViewportAdapter` to the `Main Camera`.
 3. Assign the `BoardConfig` asset.
-4. Leave the camera's `Size` field at whatever it is — the adapter overwrites it on the first
-   frame and on every resolution change. Do not hand-tune it; that is the bug this prevents.
+4. Leave the camera's `Size` field as it is — the adapter overwrites it on the first frame and on every resolution change. Do not hand-tune it; that is the bug this prevents.
 
-**Verify:** in the Scene view, drag the Game view's aspect dropdown. `Size` on the camera should
-read **7.200** at 4:3, **6.000** at 16:10 and **5.400** at 16:9, and the board box must stay fully
-inside the frame at every setting.
+**Verify:** in the Scene view, drag the Game view's aspect dropdown. `Size` should read **7.200** at
+4:3, **6.000** at 16:10 and **5.400** at 16:9, and the board box must stay fully inside the frame at
+every setting.
 
 ---
 
@@ -429,9 +398,6 @@ inside the frame at every setting.
 **Goal:** HUD content that clears a landscape notch. (F5)
 
 ### 4.1 `Assets/Scripts/Runtime/UI/SafeAreaFitter.cs`
-
-`Scripts/Runtime/UI/` is a small addition under §2's runtime layout, namespace `SliceNServe.UI`,
-for cross-cutting view plumbing. §2's own views stay where §2 put them.
 
 ```csharp
 using UnityEngine;
@@ -502,26 +468,26 @@ In `Game.unity`, on the HUD canvas:
 | Canvas Scaler → Reference Resolution | `1920 × 1080` |
 | Canvas Scaler → Match | `0.5` |
 
-Then create an empty child named `SafeAreaRoot` directly under the canvas and add
-`SafeAreaFitter` to it. **Every HUD element goes under `SafeAreaRoot`** — tickets, wallet
-readout, patience bars, pause button. Nothing may parent directly to the canvas.
+Then create an empty child named `SafeAreaRoot` directly under the canvas and add `SafeAreaFitter` to
+it. **Every HUD element goes under `SafeAreaRoot`** — tickets, cash readout, reputation readout,
+patience bars, pause button. Nothing may parent directly to the canvas.
 
-> §2 §6.5 recommends uGUI; this contract is stack-neutral and holds either way.
+> The CanvasScaler contract is stack-neutral; it holds whether the tickets are uGUI or UI Toolkit.
 
 **Verify:** `Window → General → Device Simulator`, pick a notched landscape device profile, and
-confirm no HUD element is clipped or covered. Then resize the Game view to a very wide aspect and
+confirm no HUD element is clipped or covered. Then widen the Game view to a very wide aspect and
 confirm the HUD follows the safe area rather than the raw screen edges.
 
 ---
 
 ## Step 5 — Verification matrix
 
-**Goal:** Section 1's definition of done is *demonstrated*, not assumed.
+**Goal:** §1's definition of done is *demonstrated*, not assumed.
 
 ### 5.1 Aspect matrix (Editor only, no device needed)
 
 Use the Game view's aspect dropdown; use the Device Simulator
-(`com.unity.device-simulator.devices` is already installed) for phone shapes.
+(`com.unity.device-simulator.devices` is installed) for phone shapes.
 
 | Aspect | Setting | Expect |
 | --- | --- | --- |
@@ -532,24 +498,22 @@ Use the Game view's aspect dropdown; use the Device Simulator
 | 21:9 | `21:9` | As above, widest legal view, `Size` **5.400** |
 | 32:9 | free aspect / ultrawide profile | **Pillarboxed** — black bars, board not stretched |
 
-At every aspect: **no part of the 19.2 × 10.8 board box is cut off**, and HUD content stays
-inside the safe area.
+At every aspect: **no part of the 19.2 × 10.8 box is cut off**, and HUD content stays inside the safe
+area.
 
-### 5.2 Cross-platform input parity (Step 5 of the plan, §7)
+### 5.2 Cross-platform input parity (plan §7)
 
 Requires §2 Phase 1 (`AimInput`). Once it exists:
 
-1. Drag with the **mouse** from the launcher, a known world-unit distance. Record `power` and
-   `direction`.
-2. Repeat the identical world-unit drag with **touch** via the Device Simulator (it maps mouse
-   to touch when touch simulation is enabled).
+1. Drag with the **mouse** from the launcher, a known world-unit distance. Record `power` and `direction`.
+2. Repeat the identical world-unit drag with **touch** via the Device Simulator (it maps mouse to touch when touch simulation is enabled).
 3. Both must report the same `power` and the same `direction`.
-4. Confirm a drag shorter than §2's `0.35 u` dead-zone launches nothing.
+4. Confirm a drag shorter than `0.35 u` launches nothing.
 
 ### 5.3 Orientation check
 
 - `ProjectSettings/ProjectSettings.asset` shows `defaultScreenOrientation` ≠ `4`.
-- On a device or the Device Simulator: **rotating the device never produces a portrait frame**.
+- On a device or the Device Simulator: **rotating never produces a portrait frame.**
 
 ### 5.4 Platform builds
 
@@ -562,15 +526,13 @@ Requires §2 Phase 1 (`AimInput`). Once it exists:
 
 Build via `File → Build Profiles` for the interactive path. Then:
 
-- Windows build boots to `Game.unity`; **dragging the window edge live never crops the board**
-  (`BoardViewportAdapter` reacts to `Screen.width/height`).
-- `adb install -r <apk>` on a device: the app opens in **landscape** and cannot be rotated to
-  portrait.
+- The Windows build boots to `Game.unity`; **dragging the window edge live never crops the board** (`BoardViewportAdapter` reacts to `Screen.width`/`height`).
+- `adb install -r <apk>` on a device: the app opens in **landscape** and cannot be rotated to portrait.
 
 ### 5.5 Budget check
 
 - `Window → Analysis → Profiler → GC Alloc` while `Game.unity` idles: expect **0 B/frame**.
-- Record the draw-call count in the Frame Debugger as the §1 baseline to hold later sections to.
+- Record the draw-call count in the Frame Debugger as the §1 baseline later sections are held to.
 
 ### 5.6 Commit
 
@@ -581,15 +543,16 @@ git commit -m "Section 1: landscape lock, aspect policy, camera adapter, safe-ar
 
 ---
 
-## Optional cleanups §2 did not address
+## Optional cleanups
 
-Small, independent, and safe to do or skip:
+Small, independent, safe to do or skip. §2's runbook does not cover them.
 
 | Cleanup | Why |
 | --- | --- |
-| Delete the template `Player` action map from `InputSystem_Actions.inputactions` | §2 adds a `Board` map but never says what happens to the template one. Leaving it means the asset advertises Move/Look/Jump/Attack for a game that has none. Keep the `UI` map — §2's tickets and HUD buttons need it. |
+| Delete the template `Player` action map from `InputSystem_Actions.inputactions` | §2 adds a `Board` map but never says what happens to the template one. Leaving it means the asset advertises Move/Look/Jump/Attack for a game that has none. **Keep the `UI` map** — the tickets and HUD buttons need it. |
 | Remove the `Gamepad`, `Joystick` and `XR` control schemes | Same reason. Keep `Keyboard&Mouse` and `Touch`. |
-| Delete the template `Lit2DSceneTemplate` assets under `Assets/Settings/` | Clutter in the Create menu. Do **not** touch `UniversalRP.asset`, `Renderer2D.asset` or `UniversalRenderPipelineGlobalSettings.asset` — they are referenced by GUID from `GraphicsSettings` and `QualitySettings`. |
+| Delete the template scene assets: `Assets/Settings/Lit2DSceneTemplate.scenetemplate`, `Assets/Settings/Scenes/URP2DSceneTemplate.unity` | Clutter in the Create menu. Do **not** touch `UniversalRP.asset`, `Renderer2D.asset` or `UniversalRenderPipelineGlobalSettings.asset` — they are referenced by GUID from `GraphicsSettings` and `QualitySettings`. |
+| Delete `Assets/Scripts/GameManager.cs` | A 16-line empty auto-generated stub, no namespace, no `.asmdef`, outside the planned `Scripts/Runtime/` layout. It is not part of any design. |
 
-**§1 is complete when every row in Step 5 passes.** If a row fails, fix it in the step that owns
-it, then re-run the matrix — do not start §2's board work on top of an unverified frame.
+**§1 is complete when every row in Step 5 passes.** If a row fails, fix it in the step that owns it and
+re-run the matrix — do not start §2's board work on top of an unverified frame.
