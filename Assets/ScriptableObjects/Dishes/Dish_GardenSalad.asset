@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6b5c204aeef8d364a9191899fd6df77c, type: 3}
+  m_Name: Dish_GardenSalad
+  m_EditorClassIdentifier: SliceNServe.Runtime::SliceNServe.Data.DishDefinition
+  id: salad
+  displayName: Garden Salad
+  sprite: {fileID: 270867796513690207, guid: 87258c2b5dfb1e24181a8fc4da82b030, type: 3}
+  ingredients:
+  - ingredient: {fileID: 11400000, guid: ed0b073d356b38e4da1b22d213cf329c, type: 2}
+    count: 2
+  - ingredient: {fileID: 11400000, guid: 08b33e6fe9865534083172e97364a3e1, type: 2}
+    count: 1
+  baseCash: 14
+  baseOrderWeight: 1

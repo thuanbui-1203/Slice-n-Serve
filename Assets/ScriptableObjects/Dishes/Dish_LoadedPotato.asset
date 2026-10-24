@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6b5c204aeef8d364a9191899fd6df77c, type: 3}
+  m_Name: Dish_LoadedPotato
+  m_EditorClassIdentifier: SliceNServe.Runtime::SliceNServe.Data.DishDefinition
+  id: loaded_potato
+  displayName: Loaded Potato
+  sprite: {fileID: -3217666617537803078, guid: 355cc67b8e8126741a88eebde116c8f6, type: 3}
+  ingredients:
+  - ingredient: {fileID: 11400000, guid: 581586ba529ac854ebc88ad273a5048b, type: 2}
+    count: 1
+  - ingredient: {fileID: 11400000, guid: b6b933e6eb04cbf4cb357892f4618aef, type: 2}
+    count: 1
+  - ingredient: {fileID: 11400000, guid: 08b33e6fe9865534083172e97364a3e1, type: 2}
+    count: 1
+  baseCash: 24
+  baseOrderWeight: 1

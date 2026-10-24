@@ -41,9 +41,20 @@ are what let you keep up when the orders get faster than you.
 
 ## Status
 
-**Pre-implementation.** The project is a fresh Unity 6 URP 2D template. The design and the planning
-documents are written and reconciled; **no gameplay code exists yet**. `Assets/Scripts/GameManager.cs`
-is an empty auto-generated stub, not a design decision.
+**First playable (v0.1.0).** §1 (platform frame) and §2 (core mechanics) are implemented: one scene,
+`Assets/Scenes/Game.unity`, plays the full loop — drag-and-release launch, wall bounces, swept
+slicing, auto-credited orders, patience bands, cash, reputation, game over and restart. §3–§6 are
+not started.
+
+- **Setup is code.** `Slice & Serve → Setup → 2. Build Everything` (`Assets/Scripts/Editor/ProjectSetup.cs`)
+  regenerates layers, physics, player settings, data assets, prefabs and `Game.unity`. Change the
+  script and re-run it rather than hand-editing the generated scene.
+- **Builds:** `Slice & Serve → Build → Windows x64` / `Android (ARM64 APK)`, output in `Builds/`.
+- **Tests:** EditMode (logic) and PlayMode (physics, input parity, the loop) — run them from the
+  Test Runner. `AspectSnapshots` is explicit: it renders the scene at 16:9, 16:10, 20:9, 4:3 and 32:9
+  to PNGs for review.
+- **Art:** ingredients come from `Assets/Art/Pixel_Mart`; the knife, tiles, UI and customer faces are
+  generated placeholders in `Assets/Art/Placeholders`. Sound is synthesised at runtime.
 
 | | |
 | --- | --- |
