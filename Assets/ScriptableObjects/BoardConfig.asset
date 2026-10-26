@@ -51,3 +51,4 @@ MonoBehaviour:
   earlyComplexDishWeight: 0.5
   cashMultiplier: 1
   patienceUpgradeMultiplier: 1
+  splitAngleDegrees: 25

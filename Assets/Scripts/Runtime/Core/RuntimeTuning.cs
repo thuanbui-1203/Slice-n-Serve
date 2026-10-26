@@ -24,6 +24,10 @@ namespace SliceNServe.Core
         public float IngredientSpawnRateMultiplier { get; set; } = 1f;
         public float PatienceMultiplier { get; set; } = 1f;
         public float CashMultiplier { get; set; } = 1f;
+        public float SplitChance { get; set; } = 0f;
+        public int HelperCount { get; set; } = 0;
+        public float HelperLaunchInterval { get; set; } = 3f;
+        public float HelperLaunchSpeed { get; set; } = 12f;
 
         public float LaunchMinSpeed => _config.launchMinSpeed * LaunchSpeedMultiplier;
         public float LaunchMaxSpeed => _config.launchMaxSpeed * LaunchSpeedMultiplier;

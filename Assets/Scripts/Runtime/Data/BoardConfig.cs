@@ -75,5 +75,7 @@ namespace SliceNServe.Data
         [Header("Scaling seams (§3, §4)")]
         [Min(0f)] public float cashMultiplier = 1f;
         [Min(0f)] public float patienceUpgradeMultiplier = 1f;
+        [Tooltip("Knife Split Chance upgrade: angle in degrees to fan out when splitting.")]
+        [Range(5f, 60f)] public float splitAngleDegrees = 25f;
     }
 }
