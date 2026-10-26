@@ -85,8 +85,10 @@ namespace SliceNServe.EditorTools
             KnifeController knifePrefab = BuildKnifePrefab(knifeMat);
             Ingredient ingredientPrefab = BuildIngredientPrefab();
             OrderTicketView ticketPrefab = BuildTicketPrefab();
+            UpgradeDefinition[] upgrades = BuildUpgrades();
+            ShopCard cardPrefab = BuildShopCardPrefab();
 
-            BuildScene(scene, config, wallMat, ingredients, dishes, customers, knifePrefab, ingredientPrefab, ticketPrefab);
+            BuildScene(scene, config, wallMat, ingredients, dishes, customers, knifePrefab, ingredientPrefab, ticketPrefab, upgrades, cardPrefab);
 
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
             AssetDatabase.SaveAssets();
@@ -225,7 +227,8 @@ namespace SliceNServe.EditorTools
         private static readonly string[] UsedMartSprites =
         {
             "potato", "bell_pepper", "mushroom_white", "white_cheese_piece", "cabbage", "egg_white",
-            "bowl", "teakettle", "frying pan", "chopping board"
+            "bowl", "teakettle", "frying pan", "chopping board",
+            "kitchen_knife_set", "scissors", "basket_yellow", "coffee_bag", "spatula"
         };
 
         private static PhysicsMaterial2D PhysicsMaterial(string path)
@@ -337,6 +340,40 @@ namespace SliceNServe.EditorTools
             set.arraySize = faces.Length;
             for (int i = 0; i < faces.Length; i++)
                 set.GetArrayElementAtIndex(i).objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(faces[i].Replace('\\', '/'));
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return def;
+        }
+
+        // ---------------------------------------------------------------- upgrades (§3)
+
+        private static UpgradeDefinition[] BuildUpgrades()
+        {
+            EnsureFolder(DataDir + "/Upgrades");
+            return new[]
+            {
+                Upgrade("knife_speed", "Sharper Knives", UpgradeKind.KnifeSpeed, "kitchen_knife_set", 5, 30, 1.6f, 0.10f, "+{0}% speed", 100f),
+                Upgrade("split_chance", "Twin Blades", UpgradeKind.SplitChance, "scissors", 5, 60, 1.6f, 0.08f, "{0}% split", 100f),
+                Upgrade("spawn_rate", "Fresh Deliveries", UpgradeKind.IngredientSpawnRate, "basket_yellow", 5, 40, 1.5f, 0.15f, "+{0}% restock", 100f),
+                Upgrade("patience", "Free Coffee", UpgradeKind.CustomerPatience, "coffee_bag", 5, 40, 1.5f, 0.10f, "+{0}% patience", 100f),
+                Upgrade("sous_chef", "Sous-Chef", UpgradeKind.SousChef, "spatula", 3, 120, 2.5f, 1f, "{0}× sous-chef", 1f),
+            };
+        }
+
+        private static UpgradeDefinition Upgrade(string id, string displayName, UpgradeKind kind, string art, int maxLevel,
+                                                 int baseCost, float growth, float perLevel, string format, float displayScale)
+        {
+            var def = LoadOrCreate<UpgradeDefinition>($"{DataDir}/Upgrades/Upgrade_{displayName.Replace(" ", "").Replace("-", "")}.asset");
+            var so = new SerializedObject(def);
+            so.FindProperty("id").stringValue = id;
+            so.FindProperty("displayName").stringValue = displayName;
+            so.FindProperty("icon").objectReferenceValue = MartSprite(art);
+            so.FindProperty("kind").enumValueIndex = (int)kind;
+            so.FindProperty("maxLevel").intValue = maxLevel;
+            so.FindProperty("baseCost").intValue = baseCost;
+            so.FindProperty("costGrowth").floatValue = growth;
+            so.FindProperty("effectPerLevel").floatValue = perLevel;
+            so.FindProperty("effectFormat").stringValue = format;
+            so.FindProperty("displayScale").floatValue = displayScale;
             so.ApplyModifiedPropertiesWithoutUndo();
             return def;
         }
@@ -522,11 +559,51 @@ namespace SliceNServe.EditorTools
             return SavePrefab(root, PrefabDir + "/OrderTicket.prefab").GetComponent<OrderTicketView>();
         }
 
+        private static ShopCard BuildShopCardPrefab()
+        {
+            TMP_FontAsset font = Font();
+
+            var root = new GameObject("ShopCard", typeof(RectTransform));
+            ((RectTransform)root.transform).sizeDelta = new Vector2(440f, 300f);
+            Panel(root.AddComponent<Image>(), Color.white);
+            var card = root.AddComponent<ShopCard>();
+
+            RectTransform iconFrame = Rect("IconFrame", root.transform);
+            Place(iconFrame, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(18f, -18f), new Vector2(104f, 104f));
+            Panel(iconFrame.gameObject.AddComponent<Image>(), new Color(0.94f, 0.88f, 0.76f));
+            Image icon = Img("Icon", iconFrame, null, Color.white);
+            Stretch(icon.rectTransform, 8f);
+
+            TextMeshProUGUI title = Text("Title", root.transform, font, 34f, Ink, TextAlignmentOptions.TopLeft, bold: true);
+            Place(title.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(138f, -20f), new Vector2(-156f, 46f));
+            TextMeshProUGUI level = Text("Level", root.transform, font, 26f, new Color(0.55f, 0.42f, 0.35f), TextAlignmentOptions.TopLeft, bold: true);
+            Place(level.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(138f, -70f), new Vector2(-156f, 36f));
+
+            TextMeshProUGUI effect = Text("Effect", root.transform, font, 27f, Ink, TextAlignmentOptions.Left, bold: false);
+            Place(effect.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(18f, -132f), new Vector2(-36f, 60f));
+            effect.textWrappingMode = TextWrappingModes.Normal;
+
+            RectTransform buyRt = Rect("Buy", root.transform);
+            Place(buyRt, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 18f), new Vector2(-36f, 78f), new Vector2(0.5f, 0f));
+            Image buyBg = buyRt.gameObject.AddComponent<Image>();
+            Panel(buyBg, Accent);
+            var buy = buyRt.gameObject.AddComponent<Button>();
+            buy.targetGraphic = buyBg;
+            TextMeshProUGUI price = Text("Price", buyRt, font, 38f, Color.white, TextAlignmentOptions.Center, bold: true);
+            Stretch(price.rectTransform);
+
+            SetRefs(card, ("icon", icon), ("title", title), ("level", level), ("effect", effect), ("buy", buy),
+                    ("buyBackground", buyBg), ("price", price), ("punchTarget", (RectTransform)root.transform));
+
+            return SavePrefab(root, PrefabDir + "/ShopCard.prefab").GetComponent<ShopCard>();
+        }
+
         // ---------------------------------------------------------------- scene
 
         private static void BuildScene(UnityEngine.SceneManagement.Scene scene, BoardConfig config, PhysicsMaterial2D wallMat,
                                        IngredientDefinition[] ingredients, DishDefinition[] dishes, CustomerDefinition[] customers,
-                                       KnifeController knifePrefab, Ingredient ingredientPrefab, OrderTicketView ticketPrefab)
+                                       KnifeController knifePrefab, Ingredient ingredientPrefab, OrderTicketView ticketPrefab,
+                                       UpgradeDefinition[] upgrades, ShopCard cardPrefab)
         {
             TMP_FontAsset font = Font();
 
@@ -548,6 +625,7 @@ namespace SliceNServe.EditorTools
 
             var bootstrap = new GameObject("Bootstrap").AddComponent<GameBootstrap>();
             SetRefs(bootstrap, ("boardConfig", config));
+            SetArray(bootstrap, "upgrades", upgrades);
 
             var bounds = new GameObject("Board").AddComponent<BoardBounds>();
             SetRefs(bounds, ("wallSprite", Placeholder("square")), ("floorSprite", Placeholder("floor_tile")), ("wallMaterial", wallMat));
@@ -595,18 +673,19 @@ namespace SliceNServe.EditorTools
             var gameAudio = audioGo.AddComponent<GameAudio>();
             SetRefs(gameAudio, ("source", audioSource));
 
-            (OrderTicketHud hud, RunOverlay overlay) = BuildHud(cam, ticketPrefab, font, gameAudio);
+            (OrderTicketHud hud, RunOverlay overlay, ShopPanel shop) = BuildHud(cam, ticketPrefab, cardPrefab, font, gameAudio);
 
             var runner = new GameObject("Runner").AddComponent<GameRunner>();
             SetRefs(runner,
                 ("bootstrap", bootstrap), ("bounds", bounds), ("ingredients", spawner), ("knives", knives),
                 ("aimInput", aim), ("trajectoryPreview", preview), ("orderSpawner", orders), ("boardFx", fx),
-                ("hud", hud), ("overlay", overlay), ("gameAudio", gameAudio));
+                ("hud", hud), ("overlay", overlay), ("gameAudio", gameAudio), ("shop", shop));
 
             EditorSceneManager.SaveScene(scene, ScenePath);
         }
 
-        private static (OrderTicketHud, RunOverlay) BuildHud(Camera cam, OrderTicketView ticketPrefab, TMP_FontAsset font, GameAudio gameAudio)
+        private static (OrderTicketHud, RunOverlay, ShopPanel) BuildHud(Camera cam, OrderTicketView ticketPrefab, ShopCard cardPrefab,
+                                                                        TMP_FontAsset font, GameAudio gameAudio)
         {
             // §1 plan §6.4: Screen Space Overlay, scale with screen size at 1920×1080, match 0.5.
             var canvasGo = new GameObject("HUD", typeof(RectTransform));
@@ -690,12 +769,13 @@ namespace SliceNServe.EditorTools
                 ("hint", hint), ("boardCamera", cam), ("effectsRoot", effects), ("font", font));
 
             RunOverlay overlay = BuildOverlay(canvasGo.transform, font, gameAudio);
+            ShopPanel shop = BuildShop(canvasGo.transform, cardPrefab, font, gameAudio);
 
             var eventSystem = new GameObject("EventSystem");
             eventSystem.AddComponent<UnityEngine.EventSystems.EventSystem>();
             eventSystem.AddComponent<InputSystemUIInputModule>();
 
-            return (hud, overlay);
+            return (hud, overlay, shop);
         }
 
         private static RunOverlay BuildOverlay(Transform canvas, TMP_FontAsset font, GameAudio gameAudio)
@@ -721,24 +801,78 @@ namespace SliceNServe.EditorTools
             body.textWrappingMode = TextWrappingModes.Normal;
             body.lineSpacing = 8f;
 
-            RectTransform buttonRt = Rect("Button", card);
-            Place(buttonRt, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 48f), new Vector2(480f, 104f), new Vector2(0.5f, 0f));
-            Image buttonBg = buttonRt.gameObject.AddComponent<Image>();
-            Panel(buttonBg, Accent);
-            var button = buttonRt.gameObject.AddComponent<Button>();
-            button.targetGraphic = buttonBg;
+            // Primary action centred; RunOverlay slides it left when the secondary one is shown.
+            Button button = MakeButton("Button", card, font, 42f, Accent, new Vector2(0f, 48f), new Vector2(460f, 104f), gameAudio, out TextMeshProUGUI label);
+            Button secondary = MakeButton("Secondary", card, font, 38f, new Color(0.45f, 0.32f, 0.26f), new Vector2(250f, 48f), new Vector2(300f, 104f), gameAudio, out TextMeshProUGUI secondaryLabel);
+
+            var overlay = root.gameObject.AddComponent<RunOverlay>();
+            SetRefs(overlay, ("group", group), ("card", card), ("title", title), ("body", body), ("button", button), ("buttonLabel", label),
+                    ("secondaryButton", secondary), ("secondaryLabel", secondaryLabel));
+            return overlay;
+        }
+
+        private static ShopPanel BuildShop(Transform canvas, ShopCard cardPrefab, TMP_FontAsset font, GameAudio gameAudio)
+        {
+            RectTransform root = Rect("Shop", canvas);
+            Stretch(root);
+            Image dim = root.gameObject.AddComponent<Image>();
+            dim.color = new Color(0.05f, 0.03f, 0.03f, 0.82f);
+            var group = root.gameObject.AddComponent<CanvasGroup>();
+
+            RectTransform card = Rect("Card", root);
+            Place(card, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1480f, 900f), new Vector2(0.5f, 0.5f));
+            Panel(card.gameObject.AddComponent<Image>(), Paper);
+
+            TextMeshProUGUI title = Text("Title", card, font, 68f, new Color(0.75f, 0.22f, 0.15f), TextAlignmentOptions.Left, bold: true);
+            Place(title.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(48f, -28f), new Vector2(-96f, 90f));
+            title.SetText("Kitchen Upgrades");
+
+            RectTransform till = Rect("Till", card);
+            Place(till, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-48f, -36f), new Vector2(330f, 76f), new Vector2(1f, 1f));
+            Panel(till.gameObject.AddComponent<Image>(), new Color(0.2f, 0.13f, 0.12f));
+            Image coin = Img("Coin", till, Placeholder("coin"), Color.white);
+            Place(coin.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(14f, 0f), new Vector2(50f, 50f), new Vector2(0f, 0.5f));
+            TextMeshProUGUI cash = Text("Cash", till, font, 46f, new Color(1f, 0.88f, 0.4f), TextAlignmentOptions.Right, bold: true);
+            Stretch(cash.rectTransform);
+            cash.rectTransform.offsetMin = new Vector2(72f, 0f);
+            cash.rectTransform.offsetMax = new Vector2(-18f, 0f);
+
+            RectTransform grid = Rect("Grid", card);
+            Place(grid, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -140f), new Vector2(1380f, 624f), new Vector2(0.5f, 1f));
+            var layout = grid.gameObject.AddComponent<GridLayoutGroup>();
+            layout.cellSize = new Vector2(440f, 300f);
+            layout.spacing = new Vector2(22f, 24f);
+            layout.childAlignment = TextAnchor.UpperCenter;
+            layout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            layout.constraintCount = 3;
+
+            Button back = MakeButton("Back", card, font, 40f, new Color(0.45f, 0.32f, 0.26f), new Vector2(0f, 30f), new Vector2(360f, 96f), gameAudio, out TextMeshProUGUI backLabel);
+            backLabel.SetText("Back");
+
+            var shop = root.gameObject.AddComponent<ShopPanel>();
+            SetRefs(shop, ("group", group), ("grid", grid), ("cardPrefab", cardPrefab), ("cash", cash), ("back", back));
+            root.gameObject.SetActive(false);
+            return shop;
+        }
+
+        private static Button MakeButton(string name, RectTransform parent, TMP_FontAsset font, float fontSize, Color color,
+                                         Vector2 position, Vector2 size, GameAudio gameAudio, out TextMeshProUGUI label)
+        {
+            RectTransform rt = Rect(name, parent);
+            Place(rt, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), position, size, new Vector2(0.5f, 0f));
+            Image bg = rt.gameObject.AddComponent<Image>();
+            Panel(bg, color);
+            var button = rt.gameObject.AddComponent<Button>();
+            button.targetGraphic = bg;
             ColorBlock colors = button.colors;
             colors.highlightedColor = new Color(1f, 0.92f, 0.85f);
             colors.pressedColor = new Color(0.8f, 0.7f, 0.65f);
             button.colors = colors;
             UnityEditor.Events.UnityEventTools.AddPersistentListener(button.onClick, gameAudio.PlayClick);
 
-            TextMeshProUGUI label = Text("Label", buttonRt, font, 42f, Color.white, TextAlignmentOptions.Center, bold: true);
+            label = Text("Label", rt, font, fontSize, Color.white, TextAlignmentOptions.Center, bold: true);
             Stretch(label.rectTransform);
-
-            var overlay = root.gameObject.AddComponent<RunOverlay>();
-            SetRefs(overlay, ("group", group), ("card", card), ("title", title), ("body", body), ("button", button), ("buttonLabel", label));
-            return overlay;
+            return button;
         }
 
         // ---------------------------------------------------------------- helpers

@@ -36,6 +36,7 @@ namespace SliceNServe.Tests
             if (string.IsNullOrEmpty(dir)) dir = Path.Combine(Application.dataPath, "..", "Logs", "Snapshots");
             Directory.CreateDirectory(dir);
 
+            SaveService.StoreOverride = new MemorySaveStore();   // never the player's real save
             SceneManager.LoadScene("Game");
             yield return null;
             yield return null;
@@ -49,6 +50,18 @@ namespace SliceNServe.Tests
             {
                 var runner = Object.FindAnyObjectByType<GameRunner>();
                 yield return Render(cam, rt, Path.Combine(dir, $"{label}_1_title.png"));
+
+                // The shop mid-progression: some cash, a few levels bought, one maxed-out row.
+                ServiceRegistry services = ServiceRegistry.Current;
+                services.Wallet.Add(2000);
+                foreach (var upgrade in services.Upgrades.Catalog)
+                    for (int n = 0; n < (upgrade.Kind == Data.UpgradeKind.KnifeSpeed ? 5 : 2); n++) services.Upgrades.TryBuy(upgrade);
+                var shop = Object.FindAnyObjectByType<ShopPanel>(FindObjectsInactive.Include);
+                shop.Open(null);
+                for (int i = 0; i < 20; i++) yield return null;   // fade in
+                yield return Render(cam, rt, Path.Combine(dir, $"{label}_0_shop.png"));
+                shop.Close();
+                for (int i = 0; i < 20; i++) yield return null;
 
                 runner.StartRun();
                 Time.timeScale = 3f;
@@ -99,6 +112,7 @@ namespace SliceNServe.Tests
             hud.renderMode = RenderMode.ScreenSpaceCamera;
             hud.worldCamera = cam;
             hud.planeDistance = 1f;
+            hud.sortingOrder = 100;   // above every world sprite, as Screen Space Overlay is
 
             var safe = Object.FindAnyObjectByType<SafeAreaFitter>();
             safe.enabled = false;

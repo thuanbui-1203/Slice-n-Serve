@@ -17,21 +17,43 @@ namespace SliceNServe.UI
         [SerializeField] private TMP_Text body;
         [SerializeField] private Button button;
         [SerializeField] private TMP_Text buttonLabel;
+        [SerializeField] private Button secondaryButton;
+        [SerializeField] private TMP_Text secondaryLabel;
 
         private Action _onConfirm;
+        private Action _onSecondary;
         private bool _visible;
         private float _t;
 
         public bool IsVisible => _visible;
 
-        private void Awake() => button.onClick.AddListener(Confirm);
+        private void Awake()
+        {
+            button.onClick.AddListener(Confirm);
+            if (secondaryButton != null) secondaryButton.onClick.AddListener(Secondary);
+        }
 
-        public void Show(string heading, string message, string action, Action onConfirm)
+        /// <summary>Shows the card. The secondary button (e.g. the shop) appears only when given an action.</summary>
+        public void Show(string heading, string message, string action, Action onConfirm,
+                         string secondaryAction = null, Action onSecondary = null)
         {
             title.SetText(heading);
             body.SetText(message);
             buttonLabel.SetText(action);
             _onConfirm = onConfirm;
+            _onSecondary = onSecondary;
+            if (secondaryButton != null)
+            {
+                bool two = onSecondary != null;
+                secondaryButton.gameObject.SetActive(two);
+                if (secondaryLabel != null && secondaryAction != null) secondaryLabel.SetText(secondaryAction);
+
+                // One button sits centred; with two, the primary moves left of the secondary.
+                var primary = (RectTransform)button.transform;
+                var second = (RectTransform)secondaryButton.transform;
+                float x = two ? second.anchoredPosition.x - (second.sizeDelta.x + primary.sizeDelta.x) * 0.5f - 24f : 0f;
+                primary.anchoredPosition = new Vector2(x, primary.anchoredPosition.y);
+            }
             _visible = true;
             gameObject.SetActive(true);
             group.blocksRaycasts = true;
@@ -42,6 +64,7 @@ namespace SliceNServe.UI
         {
             _visible = false;
             _onConfirm = null;
+            _onSecondary = null;
             group.blocksRaycasts = false;
             group.interactable = false;
         }
@@ -51,6 +74,15 @@ namespace SliceNServe.UI
             if (!_visible) return;
 
             Action action = _onConfirm;
+            Hide();
+            action?.Invoke();
+        }
+
+        private void Secondary()
+        {
+            if (!_visible) return;
+
+            Action action = _onSecondary;
             Hide();
             action?.Invoke();
         }

@@ -24,6 +24,7 @@ namespace SliceNServe.Tests
         [UnitySetUp]
         public IEnumerator SetUp()
         {
+            SaveService.StoreOverride = new MemorySaveStore();   // never the player's real save
             SceneManager.LoadScene("Game");
             yield return null;
             yield return null;

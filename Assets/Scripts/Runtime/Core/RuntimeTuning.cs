@@ -24,10 +24,12 @@ namespace SliceNServe.Core
         public float IngredientSpawnRateMultiplier { get; set; } = 1f;
         public float PatienceMultiplier { get; set; } = 1f;
         public float CashMultiplier { get; set; } = 1f;
-        public float SplitChance { get; set; } = 0f;
-        public int HelperCount { get; set; } = 0;
-        public float HelperLaunchInterval { get; set; } = 3f;
-        public float HelperLaunchSpeed { get; set; } = 12f;
+        public float IngredientDensityMultiplier { get; set; } = 1f;
+        public float SplitChance { get; set; }
+        public int HelperCount { get; set; }
+
+        public float HelperLaunchInterval => _config.helperLaunchInterval;
+        public float HelperLaunchSpeed => _config.helperLaunchSpeed * LaunchSpeedMultiplier;
 
         public float LaunchMinSpeed => _config.launchMinSpeed * LaunchSpeedMultiplier;
         public float LaunchMaxSpeed => _config.launchMaxSpeed * LaunchSpeedMultiplier;
@@ -42,8 +44,8 @@ namespace SliceNServe.Core
         public float IngredientMinSeparation => _config.ingredientMinSeparation;
         public float IngredientRespawnInterval => _config.ingredientRespawnInterval / Mathf.Max(0.01f, IngredientSpawnRateMultiplier);
         public float IngredientLifetime => _config.ingredientLifetime;
-        public int TargetIngredientCount => _config.targetIngredientCount;
-        public int WorkingMaxIngredientCount => _config.workingMaxIngredientCount;
+        public int TargetIngredientCount => Dense(_config.targetIngredientCount);
+        public int WorkingMaxIngredientCount => Dense(_config.workingMaxIngredientCount);
         public int MaxSpawnsPerTick => _config.maxSpawnsPerTick;
 
         public int MaxActiveOrders => _config.maxActiveOrders;
@@ -54,6 +56,9 @@ namespace SliceNServe.Core
         public float PatienceCriticalThreshold => _config.patienceCriticalThreshold;
         public int StartReputation => _config.startReputation;
         public float TotalCashMultiplier => _config.cashMultiplier * CashMultiplier;
+
+        private int Dense(int count)
+            => Mathf.Min(_config.ingredientCeiling, Mathf.RoundToInt(count * IngredientDensityMultiplier));
 
         public Rect WorldBounds => _config.worldBounds;
         public Rect IngredientZone => _config.ingredientZone;

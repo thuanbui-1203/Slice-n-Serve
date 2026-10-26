@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 51f7d7947bb881b47ad08f109cebb04c, type: 3}
+  m_Name: Upgrade_TwinBlades
+  m_EditorClassIdentifier: SliceNServe.Runtime::SliceNServe.Data.UpgradeDefinition
+  id: split_chance
+  displayName: Twin Blades
+  icon: {fileID: 7766721758921934520, guid: 1b16a92f44c6ca94ba3512dc0ab4a396, type: 3}
+  kind: 1
+  maxLevel: 5
+  baseCost: 60
+  costGrowth: 1.6
+  effectPerLevel: 0.08
+  effectFormat: '{0}% split'
+  displayScale: 100

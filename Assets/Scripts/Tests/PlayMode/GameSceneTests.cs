@@ -26,6 +26,7 @@ namespace SliceNServe.Tests
         public IEnumerator SetUp()
         {
             Time.timeScale = 1f;
+            SaveService.StoreOverride = new MemorySaveStore();   // never the player's real save
             SceneManager.LoadScene("Game");
             yield return null;
             yield return null;

@@ -72,10 +72,19 @@ namespace SliceNServe.Data
         [Min(0f)] public float earlyGameSeconds = 120f;
         [Range(0f, 1f)] public float earlyComplexDishWeight = 0.5f;
 
+        [Header("Upgrades (§3)")]
+        [Tooltip("A split knife and its parent fan out by this much either side of the parent's path.")]
+        [Range(0f, 60f)] public float splitAngleDegrees = 18f;
+
+        [Tooltip("Seconds between throws for each sous-chef. Helpers are staggered across it.")]
+        [Min(0.5f)] public float helperLaunchInterval = 4f;
+        [Min(1f)] public float helperLaunchSpeed = 15f;
+
+        [Tooltip("§1 budget: the frame-rate ceiling on live ingredients, whatever the density upgrade says.")]
+        [Min(1)] public int ingredientCeiling = 120;
+
         [Header("Scaling seams (§3, §4)")]
         [Min(0f)] public float cashMultiplier = 1f;
         [Min(0f)] public float patienceUpgradeMultiplier = 1f;
-        [Tooltip("Knife Split Chance upgrade: angle in degrees to fan out when splitting.")]
-        [Range(5f, 60f)] public float splitAngleDegrees = 25f;
     }
 }

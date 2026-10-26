@@ -1,3 +1,5 @@
+using SliceNServe.Economy;
+
 namespace SliceNServe.Core
 {
     /// <summary>
@@ -18,6 +20,10 @@ namespace SliceNServe.Core
         public RunClock Clock { get; }
         public RuntimeTuning Tuning { get; }
         public Wallet Wallet { get; }
+
+        /// <summary>§3: persistent progress and the shop. Set by the bootstrap after construction.</summary>
+        public SaveService Save { get; set; }
+        public UpgradeService Upgrades { get; set; }
 
         public static ServiceRegistry Current { get; private set; }
 

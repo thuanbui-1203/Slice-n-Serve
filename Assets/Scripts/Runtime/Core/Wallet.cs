@@ -3,22 +3,33 @@ using System;
 namespace SliceNServe.Core
 {
     /// <summary>
-    /// Minimal cash holder. Section 3 grows this into the real economy — Section 2 only needs
-    /// the value and its change event to prove the loop closes (plan §6.6). Keep the surface
-    /// this small so replacing it stays cheap.
+    /// The player's cash. Starts from the saved balance; runs add to it and the shop spends it
+    /// (concept §3). Persisting it is <see cref="SaveService"/>'s job, not this class's.
     /// </summary>
     public sealed class Wallet
     {
+        public Wallet(int startingAmount = 0) => Amount = Math.Max(0, startingAmount);
+
         public int Amount { get; private set; }
 
         public event Action<int> Changed;
 
         public void Add(int cash)
         {
-            if (cash == 0) return;
+            if (cash <= 0) return;
 
             Amount += cash;
             Changed?.Invoke(Amount);
+        }
+
+        public bool TrySpend(int cost)
+        {
+            if (cost < 0 || cost > Amount) return false;
+            if (cost == 0) return true;
+
+            Amount -= cost;
+            Changed?.Invoke(Amount);
+            return true;
         }
     }
 }

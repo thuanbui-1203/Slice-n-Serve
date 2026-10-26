@@ -140,7 +140,7 @@ namespace SliceNServe.UI
 
         private void OnExpired(OrderExpired e) => FindTicket(e.OrderId)?.Close(served: false);
 
-        private void OnLaunched(KnifeLaunched e) => _hintDismissed = true;
+        private void OnLaunched(KnifeLaunched e) => _hintDismissed |= e.Source == LaunchSource.Manual;
 
         private OrderTicketView FindTicket(int orderId)
         {

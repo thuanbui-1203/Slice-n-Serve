@@ -32,9 +32,11 @@ namespace SliceNServe.Core
         [SerializeField] private OrderTicketHud hud;
         [SerializeField] private RunOverlay overlay;
         [SerializeField] private GameAudio gameAudio;
+        [SerializeField] private ShopPanel shop;
 
         private ServiceRegistry _services;
-        private SousChefCrew _sousChefs;
+        private SousChefCrew _crew;
+        private int _runCash;
         private int _served;
         private int _expired;
         private int _bestCombo;
@@ -67,7 +69,7 @@ namespace SliceNServe.Core
             Queue = new LocalOrderQueue(events, tuning);
             Reputation = new ReputationService(events, tuning);
             orderSpawner.Initialize(Queue, _services.Clock, tuning, new ConstantDifficultyProvider(), ingredients);
-            _sousChefs = new SousChefCrew(tuning, knives, ingredients, Queue);
+            _crew = new SousChefCrew(tuning, knives, ingredients, Queue);
 
             // The loop: slices feed orders, orders pay or cost reputation, reputation ends the run.
             events.Subscribe<IngredientSliced>(OnSliced);
@@ -78,6 +80,11 @@ namespace SliceNServe.Core
             if (boardFx != null) boardFx.Initialize(events);
             if (gameAudio != null) gameAudio.Initialize(events);
             if (hud != null) hud.Initialize(Queue, events, _services.Wallet, Reputation.StartReputation);
+            if (shop != null)
+            {
+                shop.Initialize(_services.Upgrades, _services.Wallet);
+                if (gameAudio != null) shop.BuyAttempted += gameAudio.PlayPurchase;
+            }
 
             ingredients.FillImmediately();
             EnterTitle();
@@ -101,9 +108,7 @@ namespace SliceNServe.Core
             if (_services == null) return;
 
             _services.Clock.Advance();
-
-            if (State == RunState.Playing && _sousChefs != null)
-                _sousChefs.Tick(_services.Clock.DeltaTime);
+            if (State == RunState.Playing) _crew.Tick(_services.Clock.DeltaTime);
 
             // Pause is a keyboard convenience on PC; mobile pauses when the app loses focus.
             Keyboard keyboard = Keyboard.current;
@@ -134,6 +139,7 @@ namespace SliceNServe.Core
         private void OnServed(OrderServed e)
         {
             _served++;
+            _runCash += e.Cash;
             _services.Wallet.Add(e.Cash);
         }
 
@@ -149,16 +155,25 @@ namespace SliceNServe.Core
         {
             State = RunState.Title;
             SetLive(false);
+            ShowTitle();
+
+            if (overlay == null) StartRun();
+        }
+
+        private void ShowTitle()
+        {
+            int bank = _services.Wallet.Amount;
             ShowOverlay(
                 "Slice & Serve",
                 "Drag <b>back</b> from anywhere and release to throw the knife.\n"
               + "It bounces off the walls and slices what it touches.\n"
               + "Sliced ingredients go to the customer who has waited longest.\n"
-              + "Serve before their patience runs out!",
+              + "Serve before their patience runs out!"
+              + (bank > 0 ? $"\n\nIn the till: <b>${bank}</b> — spend it on upgrades." : ""),
                 "Open the kitchen",
-                StartRun);
-
-            if (overlay == null) StartRun();
+                StartRun,
+                "Upgrades",
+                () => OpenShop(ShowTitle));
         }
 
         /// <summary>Starts the run from the title card. Public so a test or a future menu can skip the card.</summary>
@@ -195,14 +210,35 @@ namespace SliceNServe.Core
             SetLive(false);
             knives.ReturnAllKnives();
 
+            // End of run is the main save checkpoint: the cash is banked for the shop.
+            SaveData save = _services.Save.Data;
+            save.runsPlayed++;
+            if (_served > save.bestServed) save.bestServed = _served;
+            _services.Save.Save();
+
+            ShowResults();
+        }
+
+        private void ShowResults()
+        {
+            SaveData save = _services.Save.Data;
             ShowOverlay(
                 "Kitchen closed!",
                 $"Your reputation ran out.\n\n"
-              + $"Orders served: <b>{_served}</b>\n"
-              + $"Cash earned: <b>${_services.Wallet.Amount}</b>\n"
+              + $"Orders served: <b>{_served}</b>  (best {save.bestServed})\n"
+              + $"Cash earned: <b>${_runCash}</b>  ·  In the till: <b>${_services.Wallet.Amount}</b>\n"
               + $"Best combo: <b>x{_bestCombo}</b>",
                 "Play again",
-                Restart);
+                Restart,
+                "Upgrades",
+                () => OpenShop(ShowResults));
+        }
+
+        /// <summary>The shop is only reachable between runs, so a purchase can never change a live order.</summary>
+        private void OpenShop(System.Action onClose)
+        {
+            if (shop == null) { onClose(); return; }
+            shop.Open(onClose);
         }
 
         private void Restart()
@@ -211,9 +247,10 @@ namespace SliceNServe.Core
             SceneManager.LoadScene(gameObject.scene.buildIndex);
         }
 
-        private void ShowOverlay(string heading, string message, string action, System.Action onConfirm)
+        private void ShowOverlay(string heading, string message, string action, System.Action onConfirm,
+                                 string secondaryAction = null, System.Action onSecondary = null)
         {
-            if (overlay != null) overlay.Show(heading, message, action, onConfirm);
+            if (overlay != null) overlay.Show(heading, message, action, onConfirm, secondaryAction, onSecondary);
         }
 
         /// <summary>Only a live run accepts input, ages orders and spawns customers.</summary>

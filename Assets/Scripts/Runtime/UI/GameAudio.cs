@@ -15,7 +15,7 @@ namespace SliceNServe.UI
         [SerializeField] private AudioSource source;
         [SerializeField, Range(0f, 1f)] private float volume = 0.6f;
 
-        private AudioClip _launch, _bounce, _slice, _waste, _serve, _expire, _gameOver, _tick;
+        private AudioClip _launch, _bounce, _slice, _waste, _serve, _expire, _gameOver, _tick, _purchase;
         private EventBus _events;
         private float _lastBounce;
 
@@ -33,6 +33,7 @@ namespace SliceNServe.UI
             _expire = Arpeggio("expire", new[] { 330f, 247f }, 0.16f, 0.5f, square: true);
             _gameOver = Arpeggio("gameover", new[] { 392f, 330f, 262f, 196f }, 0.22f, 0.5f, square: true);
             _tick = Tone("tick", 0.04f, 2200f, 0.25f, decay: 80f);
+            _purchase = Arpeggio("purchase", new[] { 523f, 659f, 784f, 1047f }, 0.06f, 0.4f);
 
             _events.Subscribe<KnifeLaunched>(OnLaunched);
             _events.Subscribe<KnifeBounced>(OnBounced);
@@ -58,6 +59,9 @@ namespace SliceNServe.UI
 
         /// <summary>For UI buttons.</summary>
         public void PlayClick() => Play(_tick, 1f);
+
+        /// <summary>For the shop: a bright chime on a purchase, a dull thud when it can't be afforded.</summary>
+        public void PlayPurchase(bool bought) => Play(bought ? _purchase : _waste, 1f);
 
         private void OnLaunched(KnifeLaunched e) => Play(_launch, 1f);
 

@@ -43,8 +43,14 @@ are what let you keep up when the orders get faster than you.
 
 **First playable (v0.1.0).** §1 (platform frame) and §2 (core mechanics) are implemented: one scene,
 `Assets/Scenes/Game.unity`, plays the full loop — drag-and-release launch, wall bounces, swept
-slicing, auto-credited orders, patience bands, cash, reputation, game over and restart. §3–§6 are
-not started.
+slicing, auto-credited orders, patience bands, cash, reputation, game over and restart.
+
+**§3 Economy & Upgrades — first pass.** Cash and upgrade levels persist between runs
+(`save.json` in `Application.persistentDataPath`). A shop between runs (title and end-of-run cards)
+sells the five concept upgrades: knife speed, split chance, ingredient restock/density, customer
+patience, and sous-chef helpers that throw on their own while you play. Every price and effect
+lives in `Assets/ScriptableObjects/Upgrades/`. Not yet: offline earnings, a difficulty ramp (§4)
+to push back against upgraded runs. §4–§6 are not started.
 
 - **Setup is code.** `Slice & Serve → Setup → 2. Build Everything` (`Assets/Scripts/Editor/ProjectSetup.cs`)
   regenerates layers, physics, player settings, data assets, prefabs and `Game.unity`. Change the

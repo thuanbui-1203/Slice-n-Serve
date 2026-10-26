@@ -1,4 +1,5 @@
 using SliceNServe.Data;
+using SliceNServe.Economy;
 using UnityEngine;
 
 namespace SliceNServe.Core
@@ -11,6 +12,7 @@ namespace SliceNServe.Core
     public sealed class GameBootstrap : MonoBehaviour
     {
         [SerializeField] private BoardConfig boardConfig;
+        [SerializeField] private UpgradeDefinition[] upgrades;
 
         public ServiceRegistry Services { get; private set; }
 
@@ -23,14 +25,23 @@ namespace SliceNServe.Core
                 return;
             }
 
+            var save = new SaveService(SaveService.StoreOverride ?? FileSaveStore.Default());
             var tuning = new RuntimeTuning(boardConfig);
-            Services = ServiceRegistry.Install(new ServiceRegistry(
-                new EventBus(), new RunClock(), tuning, new Wallet()));
+            var wallet = new Wallet(save.Data.cash);
+            wallet.Changed += amount => save.Data.cash = amount;   // written to disk at checkpoints
+
+            Services = ServiceRegistry.Install(new ServiceRegistry(new EventBus(), new RunClock(), tuning, wallet));
+            Services.Save = save;
+            Services.Upgrades = new UpgradeService(upgrades ?? new UpgradeDefinition[0], save, wallet, tuning);
 
             // O3 is still open; this is the 60 FPS floor, which mobile does not default to.
             Application.targetFrameRate = 60;
             QualitySettings.vSyncCount = 0;
         }
+
+        // Checkpoints: losing focus is the last reliable moment on mobile; quitting on PC.
+        private void OnApplicationPause(bool paused) { if (paused) Services?.Save.Save(); }
+        private void OnApplicationQuit() => Services?.Save.Save();
 
         private void OnDestroy()
         {

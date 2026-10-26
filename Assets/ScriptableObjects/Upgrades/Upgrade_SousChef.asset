@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 51f7d7947bb881b47ad08f109cebb04c, type: 3}
+  m_Name: Upgrade_SousChef
+  m_EditorClassIdentifier: SliceNServe.Runtime::SliceNServe.Data.UpgradeDefinition
+  id: sous_chef
+  displayName: Sous-Chef
+  icon: {fileID: 7110134370309661697, guid: d5a5bde87a66b524a887c489ab4a88cb, type: 3}
+  kind: 4
+  maxLevel: 3
+  baseCost: 120
+  costGrowth: 2.5
+  effectPerLevel: 1
+  effectFormat: "{0}\xD7 sous-chef"
+  displayScale: 1
