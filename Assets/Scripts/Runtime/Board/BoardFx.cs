@@ -41,6 +41,7 @@ namespace SliceNServe.Board
 
         private EventBus _events;
         private int _nextParticle, _nextRing, _nextPopup;
+        private float _nextWasteText;
 
         public void Initialize(EventBus events)
         {
@@ -111,6 +112,10 @@ namespace SliceNServe.Board
         private void OnWasted(IngredientWasted e)
         {
             Burst(e.Position, new Color(0.55f, 0.55f, 0.55f, 0.9f), 8, 1.5f, 0.18f);
+            // Once helpers and split knives are flying, waste happens constantly: the puff always
+            // plays, but the words are rate-limited so they stay a hint rather than noise.
+            if (Time.time < _nextWasteText) return;
+            _nextWasteText = Time.time + 1.5f;
             Popup(e.Position + Vector2.up * 0.45f, "not needed", new Color(0.8f, 0.8f, 0.8f), 3.2f);
         }
 

@@ -9,6 +9,10 @@ namespace SliceNServe.Board
         [SerializeField] private Rigidbody2D body;
         [SerializeField] private IngredientSlicer slicer;
         [SerializeField] private TrailRenderer trail;
+        [SerializeField] private SpriteRenderer visual;
+
+        private static readonly Color HelperTint = new Color(1f, 0.82f, 0.45f);
+        private static readonly Color SplitTint = new Color(0.7f, 0.88f, 1f);
 
         private RuntimeTuning _tuning;
         private EventBus _events;
@@ -28,8 +32,15 @@ namespace SliceNServe.Board
         /// <summary>Ingredients sliced since launch — the combo counter, reset per launch.</summary>
         public int SliceCount => _sliceCount;
         public Rigidbody2D Body => body;
+        public LaunchSource Source { get; private set; }
+
+        /// <summary>Set once this knife has split, so one knife splits at most once (§3).</summary>
+        public bool HasSplit { get; set; }
 
         public event Action<KnifeController> Expired;
+
+        /// <summary>Raised after a wall bounce has been applied. The split upgrade listens here.</summary>
+        public event Action<KnifeController> Bounced;
 
         public void Initialize(RuntimeTuning tuning, EventBus events, IngredientSpawner spawner, Rect playArea)
         {
@@ -58,6 +69,10 @@ namespace SliceNServe.Board
             _sliceCount = 0;
             _age = 0f;
             _live = true;
+            Source = source;
+            HasSplit = source == LaunchSource.Split;   // a split-off knife never splits again
+            if (visual != null)
+                visual.color = source == LaunchSource.Helper ? HelperTint : source == LaunchSource.Split ? SplitTint : Color.white;
 
             // Move the body, not just the transform: an unsimulated body keeps its old pose
             // otherwise, and interpolation would smear the knife from where it last died.
@@ -132,6 +147,7 @@ namespace SliceNServe.Board
                 v = (v.normalized + n * 0.12f).normalized * v.magnitude;
 
             body.linearVelocity = v;
+            Bounced?.Invoke(this);
         }
     }
 }

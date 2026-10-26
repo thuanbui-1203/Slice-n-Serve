@@ -34,6 +34,7 @@ namespace SliceNServe.Core
         [SerializeField] private GameAudio gameAudio;
 
         private ServiceRegistry _services;
+        private SousChefCrew _sousChefs;
         private int _served;
         private int _expired;
         private int _bestCombo;
@@ -66,6 +67,7 @@ namespace SliceNServe.Core
             Queue = new LocalOrderQueue(events, tuning);
             Reputation = new ReputationService(events, tuning);
             orderSpawner.Initialize(Queue, _services.Clock, tuning, new ConstantDifficultyProvider(), ingredients);
+            _sousChefs = new SousChefCrew(tuning, knives, ingredients, Queue);
 
             // The loop: slices feed orders, orders pay or cost reputation, reputation ends the run.
             events.Subscribe<IngredientSliced>(OnSliced);
@@ -99,6 +101,9 @@ namespace SliceNServe.Core
             if (_services == null) return;
 
             _services.Clock.Advance();
+
+            if (State == RunState.Playing && _sousChefs != null)
+                _sousChefs.Tick(_services.Clock.DeltaTime);
 
             // Pause is a keyboard convenience on PC; mobile pauses when the app loses focus.
             Keyboard keyboard = Keyboard.current;

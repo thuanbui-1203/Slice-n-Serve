@@ -29,6 +29,7 @@ namespace SliceNServe.Board
 
         public IReadOnlyList<IngredientDefinition> Definitions => definitions;
         public int LiveCount => _live.Count;
+        public IReadOnlyList<Ingredient> Live => _live;
 
         public void Initialize(RuntimeTuning tuning, EventBus events)
         {

@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace SliceNServe.Core
 {
-    public enum LaunchSource { Manual = 0, Helper = 1 }
+    public enum LaunchSource { Manual = 0, Helper = 1, Split = 2 }
     public enum GameOverReason { ReputationDepleted = 0, Quit = 1 }
 
     public readonly struct KnifeLaunched

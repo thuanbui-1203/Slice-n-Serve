@@ -218,6 +218,7 @@ MonoBehaviour:
   body: {fileID: 4132789518351512509}
   slicer: {fileID: 4504198285666430287}
   trail: {fileID: 2662678035596210212}
+  visual: {fileID: 696776118952181686}
 --- !u!1 &7435540000128353310
 GameObject:
   m_ObjectHideFlags: 0

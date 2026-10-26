@@ -389,6 +389,7 @@ namespace SliceNServe.EditorTools
             so.FindProperty("body").objectReferenceValue = body;
             so.FindProperty("slicer").objectReferenceValue = slicer;
             so.FindProperty("trail").objectReferenceValue = trail;
+            so.FindProperty("visual").objectReferenceValue = sr;
             so.ApplyModifiedPropertiesWithoutUndo();
 
             return SavePrefab(root, PrefabDir + "/Knife.prefab").GetComponent<KnifeController>();
