@@ -17,6 +17,10 @@ namespace SliceNServe.Board
         [SerializeField] private Camera boardCamera;
         [SerializeField] private InputActionAsset actions;
 
+        [Tooltip("Screen-space-overlay HUD buttons that sit over the board: a press on one is a "
+               + "button press, never the start of a throw.")]
+        [SerializeField] private RectTransform[] blockers;
+
         private InputActionMap _board;
         private InputAction _aim;
         private InputAction _launch;
@@ -77,6 +81,7 @@ namespace SliceNServe.Board
             _pointer = ctx.control.device as Pointer;
             Vector2 screen = ReadScreenPosition();
             if (boardCamera != null && !boardCamera.pixelRect.Contains(screen)) return;
+            if (OverBlocker(screen)) return;
 
             _dragStartScreen = screen;
             _dragging = true;
@@ -103,6 +108,20 @@ namespace SliceNServe.Board
             if (!_dragging) return;
 
             CurrentDragWorld = ScreenToWorldDelta(ReadScreenPosition() - _dragStartScreen);
+        }
+
+        // Not EventSystem.IsPointerOverGameObject: it is unreliable inside Input System callbacks.
+        private bool OverBlocker(Vector2 screen)
+        {
+            if (blockers == null) return false;
+
+            for (int i = 0; i < blockers.Length; i++)
+            {
+                RectTransform b = blockers[i];
+                if (b != null && b.gameObject.activeInHierarchy && RectTransformUtility.RectangleContainsScreenPoint(b, screen, null))
+                    return true;
+            }
+            return false;
         }
 
         private Vector2 ReadScreenPosition()

@@ -30,6 +30,9 @@ namespace SliceNServe.Board
         public bool CanLaunch => _initialized && _manualKnife == null;
         public int LiveCount => _liveCount;
 
+        /// <summary>The player's own knife is in flight. Sous-chefs only throw while it is.</summary>
+        public bool PlayerKnifeLive => _manualKnife != null;
+
         /// <summary>Fired whenever a knife returns to the launcher.</summary>
         public event Action<KnifeController> KnifeReturned;
 
@@ -59,6 +62,9 @@ namespace SliceNServe.Board
 
         /// <summary>Launches from an arbitrary point — a split knife starts where its parent is.</summary>
         public KnifeController Launch(Vector2 position, Vector2 velocity, LaunchSource source)
+            => Launch(position, velocity, source, fromHelper: false);
+
+        private KnifeController Launch(Vector2 position, Vector2 velocity, LaunchSource source, bool fromHelper)
         {
             // The single-live-knife rule guards against a double-tap; helpers bypass it (§3).
             if (source == LaunchSource.Manual && !CanLaunch) return null;
@@ -68,7 +74,7 @@ namespace SliceNServe.Board
                 KnifeController k = _pool[i];
                 if (k.IsLive) continue;
 
-                k.Launch(_nextId++, position, velocity, source);
+                k.Launch(_nextId++, position, velocity, source, fromHelper);
                 _liveCount++;
                 if (source == LaunchSource.Manual) _manualKnife = k;
                 return k;
@@ -107,7 +113,7 @@ namespace SliceNServe.Board
                 if (!parent.IsLive) continue;
 
                 Vector2 v = parent.Body.linearVelocity;
-                Launch(parent.Body.position, Rotate(v, _tuning.Config.splitAngleDegrees), LaunchSource.Split);
+                Launch(parent.Body.position, Rotate(v, _tuning.Config.splitAngleDegrees), LaunchSource.Split, parent.FromHelper);
                 parent.Body.linearVelocity = Rotate(v, -_tuning.Config.splitAngleDegrees);   // fan out both ways
             }
             _pendingSplitCount = 0;
@@ -121,10 +127,17 @@ namespace SliceNServe.Board
 
         private void OnKnifeExpired(KnifeController k)
         {
+            if (!k.IsLive) return;   // already recalled with the player's knife this step
+
             k.ReturnToPool();
             _liveCount--;
-            if (k == _manualKnife) _manualKnife = null;
             KnifeReturned?.Invoke(k);
+            if (k != _manualKnife) return;
+
+            // The sous-chefs work alongside the player's throw: when it ends, so do theirs.
+            _manualKnife = null;
+            for (int i = 0; i < PoolCapacity; i++)
+                if (_pool[i] != null && _pool[i].IsLive && _pool[i].FromHelper) OnKnifeExpired(_pool[i]);
         }
     }
 }

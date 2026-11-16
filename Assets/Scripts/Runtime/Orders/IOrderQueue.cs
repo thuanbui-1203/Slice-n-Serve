@@ -19,5 +19,8 @@ namespace SliceNServe.Orders
         void SubmitIngredient(IngredientDefinition ingredient, Vector2 position);
 
         void Tick(float delta);
+
+        /// <summary>Rush hour: credit only the front customer; anything they don't need is wasted.</summary>
+        bool FrontOnly { get; set; }
     }
 }

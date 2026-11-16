@@ -10,8 +10,8 @@ using UnityEngine.UI;
 namespace SliceNServe.UI
 {
     /// <summary>
-    /// The upgrade shop, opened between runs from the title and end-of-run cards. Knows nothing
-    /// about gameplay: it shows <see cref="UpgradeService"/> and forwards presses to it.
+    /// The upgrade shop, opened from the main menu, the pause card, or the HUD mid-run. Knows
+    /// nothing about gameplay: it shows <see cref="UpgradeService"/> and forwards presses to it.
     /// </summary>
     public sealed class ShopPanel : MonoBehaviour
     {

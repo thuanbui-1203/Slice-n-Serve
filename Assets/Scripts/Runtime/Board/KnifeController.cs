@@ -37,6 +37,10 @@ namespace SliceNServe.Board
         /// <summary>Set once this knife has split, so one knife splits at most once (§3).</summary>
         public bool HasSplit { get; set; }
 
+        /// <summary>Thrown by a sous-chef, or split off one of theirs. These knives only fly
+        /// while the player's own knife does.</summary>
+        public bool FromHelper { get; private set; }
+
         public event Action<KnifeController> Expired;
 
         /// <summary>Raised after a wall bounce has been applied. The split upgrade listens here.</summary>
@@ -62,9 +66,10 @@ namespace SliceNServe.Board
             slicer.Initialize(body, spawner);
         }
 
-        public void Launch(int knifeId, Vector2 position, Vector2 velocity, LaunchSource source)
+        public void Launch(int knifeId, Vector2 position, Vector2 velocity, LaunchSource source, bool fromHelper = false)
         {
             _knifeId = knifeId;
+            FromHelper = fromHelper || source == LaunchSource.Helper;
             _bounceCount = 0;
             _sliceCount = 0;
             _age = 0f;

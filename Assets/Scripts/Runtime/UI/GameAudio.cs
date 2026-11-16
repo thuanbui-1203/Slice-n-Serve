@@ -15,8 +15,14 @@ namespace SliceNServe.UI
         [SerializeField] private AudioSource source;
         [SerializeField, Range(0f, 1f)] private float volume = 0.6f;
 
-        private AudioClip _launch, _bounce, _slice, _waste, _serve, _expire, _gameOver, _tick, _purchase;
+        [Header("Music (optional)")]
+        [SerializeField] private AudioSource musicSource;
+        [SerializeField] private AudioClip music;
+        [SerializeField, Range(0f, 1f)] private float musicLevel = 0.6f;
+
+        private AudioClip _launch, _bounce, _slice, _waste, _serve, _expire, _gameOver, _tick, _purchase, _rush;
         private EventBus _events;
+        private GameSettings _settings;
         private float _lastBounce;
 
         public void Initialize(EventBus events)
@@ -34,6 +40,7 @@ namespace SliceNServe.UI
             _gameOver = Arpeggio("gameover", new[] { 392f, 330f, 262f, 196f }, 0.22f, 0.5f, square: true);
             _tick = Tone("tick", 0.04f, 2200f, 0.25f, decay: 80f);
             _purchase = Arpeggio("purchase", new[] { 523f, 659f, 784f, 1047f }, 0.06f, 0.4f);
+            _rush = Arpeggio("rush", new[] { 880f, 659f, 880f, 659f, 880f }, 0.1f, 0.45f, square: true);
 
             _events.Subscribe<KnifeLaunched>(OnLaunched);
             _events.Subscribe<KnifeBounced>(OnBounced);
@@ -42,10 +49,34 @@ namespace SliceNServe.UI
             _events.Subscribe<OrderServed>(OnServed);
             _events.Subscribe<OrderExpired>(OnExpired);
             _events.Subscribe<GameOver>(OnGameOver);
+            _events.Subscribe<RushHourChanged>(OnRush);
         }
+
+        /// <summary>Follows the Settings panel's sliders, and starts the background music.</summary>
+        public void BindSettings(GameSettings settings)
+        {
+            _settings = settings;
+            _settings.Changed += ApplyVolumes;
+            ApplyVolumes();
+
+            if (musicSource == null || music == null) return;
+            musicSource.clip = music;
+            musicSource.loop = true;
+            musicSource.playOnAwake = false;
+            musicSource.Play();
+        }
+
+        private void ApplyVolumes()
+        {
+            if (musicSource != null) musicSource.volume = musicLevel * MusicVolume;
+        }
+
+        private float MusicVolume => _settings != null ? _settings.MusicVolume : 1f;
+        private float SfxVolume => _settings != null ? _settings.SfxVolume : 1f;
 
         private void OnDestroy()
         {
+            if (_settings != null) _settings.Changed -= ApplyVolumes;
             if (_events == null) return;
 
             _events.Unsubscribe<KnifeLaunched>(OnLaunched);
@@ -55,10 +86,14 @@ namespace SliceNServe.UI
             _events.Unsubscribe<OrderServed>(OnServed);
             _events.Unsubscribe<OrderExpired>(OnExpired);
             _events.Unsubscribe<GameOver>(OnGameOver);
+            _events.Unsubscribe<RushHourChanged>(OnRush);
         }
 
         /// <summary>For UI buttons.</summary>
         public void PlayClick() => Play(_tick, 1f);
+
+        /// <summary>For toggles, whose event carries the new value.</summary>
+        public void PlayToggle(bool _) => Play(_tick, 1.2f);
 
         /// <summary>For the shop: a bright chime on a purchase, a dull thud when it can't be afforded.</summary>
         public void PlayPurchase(bool bought) => Play(bought ? _purchase : _waste, 1f);
@@ -78,6 +113,7 @@ namespace SliceNServe.UI
         private void OnServed(OrderServed e) => Play(_serve, 1f);
         private void OnExpired(OrderExpired e) => Play(_expire, 1f);
         private void OnGameOver(GameOver e) => Play(_gameOver, 1f);
+        private void OnRush(RushHourChanged e) { if (e.Active) Play(_rush, 1f); }
 
         private void Play(AudioClip clip, float pitch)
         {
@@ -85,7 +121,7 @@ namespace SliceNServe.UI
 
             // PlayOneShot ignores pitch per call, so a pitched cue gets the shared source's pitch.
             source.pitch = pitch;
-            source.PlayOneShot(clip, volume);
+            source.PlayOneShot(clip, volume * SfxVolume);
         }
 
         private static AudioClip Tone(string clipName, float seconds, float freq, float amp, float decay, float noise = 0f)

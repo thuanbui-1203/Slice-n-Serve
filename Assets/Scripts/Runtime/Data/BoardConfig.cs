@@ -12,16 +12,22 @@ namespace SliceNServe.Data
     public sealed class BoardConfig : ScriptableObject
     {
         [Header("Board (plan §5.1)")]
-        [Tooltip("Play area in world units, centred on the origin. Section 1's camera adapter reads this.")]
-        public Rect worldBounds = new Rect(-9.6f, -5.4f, 19.2f, 10.8f);
+        [Tooltip("What the camera frames, contain-fit (Section 1). The kitchen decor fills the space "
+               + "between this and the play area.")]
+        public Rect viewBounds = new Rect(-9.6f, -5.4f, 19.2f, 10.8f);
+
+        [Tooltip("Play area in world units: the walls sit on it. Smaller than the view, so the "
+               + "cooking line runs along the bottom and shelves line the sides. The top edge stays "
+               + "at the view's, under the order tickets.")]
+        public Rect worldBounds = new Rect(-8.0f, -3.8f, 16.0f, 9.2f);
 
         [Tooltip("Where a new knife starts. Must keep ~1 u of clearance to the nearest wall (§5.6).")]
-        public Vector2 launcherPosition = new Vector2(0f, -4.4f);
+        public Vector2 launcherPosition = new Vector2(0f, -2.8f);
 
         [Tooltip("Where ingredients may spawn: the board minus edge margins, minus a reserved "
                + "launch corridor at the bottom and a matching band at the top, which the order "
                + "tickets sit over at 16:9.")]
-        public Rect ingredientZone = new Rect(-9.1f, -3.3f, 18.2f, 6.6f);
+        public Rect ingredientZone = new Rect(-7.5f, -1.8f, 15.0f, 5.1f);
 
         [Header("Knife (plan §5.2, §5.3)")]
         [Tooltip("Board units of drag that produce full power. Independently of pixels, so mouse "
@@ -62,6 +68,39 @@ namespace SliceNServe.Data
         [Range(0f, 1f)] public float patienceHurryThreshold = 0.6f;
         [Range(0f, 1f)] public float patienceCriticalThreshold = 0.3f;
         [Min(0)] public int startReputation = 3;
+
+        [Header("Difficulty ramp (§4)")]
+        [Tooltip("Seconds of a run over which customers get less patient, from full patience down to minPatienceScale.")]
+        [Min(1f)] public float patienceRampSeconds = 240f;
+        [Range(0.1f, 1f)] public float minPatienceScale = 0.5f;
+
+        [Tooltip("The floor: no customer's patience drops below this, before the Free Coffee upgrade "
+               + "multiplies it. The ramp stops here, so a fully upgraded kitchen outgrows the rush.")]
+        [Min(1f)] public float minPatienceSeconds = 9f;
+
+        [Header("Demand growth (§4) — deliberately unbounded")]
+        [Tooltip("Every this many seconds of a run, customers order one level bigger. There is no "
+               + "cap: with patience floored, every run ends eventually, however upgraded.")]
+        [Min(5f)] public float demandStepSeconds = 60f;
+        [Tooltip("Each level adds this fraction of a recipe's counts (rounded up): 0.5 turns 2 cabbages into 3, then 4…")]
+        [Min(0f)] public float demandGrowthPerLevel = 0.5f;
+        [Tooltip("Each level adds this fraction of the dish's cash. Kept above the growth, so bigger orders pay better per ingredient.")]
+        [Min(0f)] public float demandRewardPerLevel = 0.6f;
+
+        [Header("Rush hour (§4) — customers arrive in waves")]
+        [Min(0f)] public float rushFirstAt = 75f;
+        [Tooltip("Seconds of normal service between the end of one rush and the start of the next.")]
+        [Min(1f)] public float rushEvery = 90f;
+        [Tooltip("A rush lasts at least this long: while time remains, each cleared wave brings the "
+               + "next. Once it runs out, the rush ends with the wave in progress.")]
+        [Min(1f)] public float rushDuration = 25f;
+        [Min(1)] public int rushWaveMin = 6;
+        [Min(1)] public int rushWaveMax = 7;
+        [Tooltip("A wave forms a line: each place behind the front adds this much patience, so the "
+               + "back of the line can wait for the front to be served.")]
+        [Min(0f)] public float rushPatiencePerPlace = 8f;
+        [Tooltip("Orders placed during a rush pay this much more.")]
+        [Min(1f)] public float rushCashBonus = 1.5f;
 
         [Tooltip("Fairness bias: each recipe ingredient missing from the live board adds this to "
                + "the dish's weight divisor. A small bias, never a hard rule (plan §6.2).")]

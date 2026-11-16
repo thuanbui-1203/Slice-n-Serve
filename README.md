@@ -49,8 +49,31 @@ slicing, auto-credited orders, patience bands, cash, reputation, game over and r
 (`save.json` in `Application.persistentDataPath`). A shop between runs (title and end-of-run cards)
 sells the five concept upgrades: knife speed, split chance, ingredient restock/density, customer
 patience, and sous-chef helpers that throw on their own while you play. Every price and effect
-lives in `Assets/ScriptableObjects/Upgrades/`. Not yet: offline earnings, a difficulty ramp (§4)
-to push back against upgraded runs. §4–§6 are not started.
+lives in `Assets/ScriptableObjects/Upgrades/`. Not yet: offline earnings.
+
+**Menus and a first difficulty ramp.** The game opens on a main menu (Play / Upgrade / Settings)
+built from Food-Ping-Pong's pixel UI, font and music (`Assets/Art/FoodPingPong`). The shop is also
+reachable mid-run from the HUD's Upgrades button or the pause card; the run freezes while it is
+open and purchases apply immediately. Customers lose patience over a run's first four minutes, but
+never below a floor (`BoardConfig.minPatienceSeconds`) — the Free Coffee upgrade multiplies on top
+of that floor. Settings (music, sound, fullscreen on PC) live in PlayerPrefs, not the save file.
+
+**Every run ends.** Orders grow a level every minute with no ceiling — more of each ingredient,
+for more cash — so even a maxed kitchen is eventually overrun. Rush hours come round every 90 s
+from 75 s in: customers arrive in waves of 6–7 (the next wave when the line clears, while the rush
+lasts), pay ×1.5, and each slice goes only to the customer at the front of the line; anything they
+don't need is wasted. Places further back in a wave get extra patience.
+
+**The kitchen.** The play area is smaller than the screen (`BoardConfig.worldBounds` inside
+`viewBounds`): a cooking line runs along the bottom and shelves line the sides (`KitchenDecor`),
+with flickering burners, sizzling pans, steam, and swinging tools that flare up on each served
+order and during a rush. Two chefs chop on the line and cheer when an order is served; they, the
+boiling pot, the meats and the brick wall come from Riley's CC0
+[Restaurant Character and Tileset](https://rkuhlf-assets.itch.io/restaurant-pixel-art)
+(`Assets/Art/Spritesheets`, re-sliced by the setup script). The upgrade cards use a pixel font from
+`Assets/Art/SlimeFonts/` when one is there. Sous-chefs throw only
+alongside the player: they follow each throw, and their knives are recalled when the player's lands.
+All of it is tunable in `BoardConfig` (Difficulty ramp, Demand growth, Rush hour).
 
 - **Setup is code.** `Slice & Serve → Setup → 2. Build Everything` (`Assets/Scripts/Editor/ProjectSetup.cs`)
   regenerates layers, physics, player settings, data assets, prefabs and `Game.unity`. Change the

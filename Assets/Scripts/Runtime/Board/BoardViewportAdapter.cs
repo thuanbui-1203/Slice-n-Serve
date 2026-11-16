@@ -48,7 +48,8 @@ namespace SliceNServe.Board
             _lastWidth = Screen.width;
             _lastHeight = Screen.height;
 
-            Rect bounds = boardConfig != null ? boardConfig.worldBounds : FallbackBounds;
+            // The view, not the play area: the kitchen around the board is part of the picture.
+            Rect bounds = boardConfig != null ? boardConfig.viewBounds : FallbackBounds;
 
             // Keep the board centred without touching the camera's z (which sets its depth).
             Vector3 position = transform.position;

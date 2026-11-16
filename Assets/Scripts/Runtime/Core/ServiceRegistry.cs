@@ -25,6 +25,9 @@ namespace SliceNServe.Core
         public SaveService Save { get; set; }
         public UpgradeService Upgrades { get; set; }
 
+        /// <summary>Volumes and display preferences, for the menu's Settings panel.</summary>
+        public GameSettings Settings { get; set; }
+
         public static ServiceRegistry Current { get; private set; }
 
         public static ServiceRegistry Install(ServiceRegistry registry)

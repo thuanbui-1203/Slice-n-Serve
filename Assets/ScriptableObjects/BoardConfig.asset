@@ -12,19 +12,25 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b701ad81e840ac642a40c9db9a071e98, type: 3}
   m_Name: BoardConfig
   m_EditorClassIdentifier: SliceNServe.Runtime::SliceNServe.Data.BoardConfig
-  worldBounds:
+  viewBounds:
     serializedVersion: 2
     x: -9.6
     y: -5.4
     width: 19.2
     height: 10.8
-  launcherPosition: {x: 0, y: -4.4}
+  worldBounds:
+    serializedVersion: 2
+    x: -8
+    y: -3.8
+    width: 16
+    height: 9.2
+  launcherPosition: {x: 0, y: -2.8}
   ingredientZone:
     serializedVersion: 2
-    x: -9.1
-    y: -3.3
-    width: 18.2
-    height: 6.6
+    x: -7.5
+    y: -1.8
+    width: 15
+    height: 5.1
   maxDragLength: 3.5
   deadZone: 0.35
   launchMinSpeed: 8
@@ -46,9 +52,25 @@ MonoBehaviour:
   patienceHurryThreshold: 0.6
   patienceCriticalThreshold: 0.3
   startReputation: 3
+  patienceRampSeconds: 240
+  minPatienceScale: 0.5
+  minPatienceSeconds: 9
+  demandStepSeconds: 60
+  demandGrowthPerLevel: 0.5
+  demandRewardPerLevel: 0.6
+  rushFirstAt: 75
+  rushEvery: 90
+  rushDuration: 25
+  rushWaveMin: 6
+  rushWaveMax: 7
+  rushPatiencePerPlace: 8
+  rushCashBonus: 1.5
   missingIngredientPenalty: 0.35
   earlyGameSeconds: 120
   earlyComplexDishWeight: 0.5
+  splitAngleDegrees: 25
+  helperLaunchInterval: 4
+  helperLaunchSpeed: 15
+  ingredientCeiling: 120
   cashMultiplier: 1
   patienceUpgradeMultiplier: 1
-  splitAngleDegrees: 25

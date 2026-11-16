@@ -33,6 +33,7 @@ namespace SliceNServe.Core
             Services = ServiceRegistry.Install(new ServiceRegistry(new EventBus(), new RunClock(), tuning, wallet));
             Services.Save = save;
             Services.Upgrades = new UpgradeService(upgrades ?? new UpgradeDefinition[0], save, wallet, tuning);
+            Services.Settings = new GameSettings();
 
             // O3 is still open; this is the 60 FPS floor, which mobile does not default to.
             Application.targetFrameRate = 60;

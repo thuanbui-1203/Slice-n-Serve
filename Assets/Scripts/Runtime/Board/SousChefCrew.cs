@@ -7,9 +7,11 @@ using UnityEngine;
 namespace SliceNServe.Board
 {
     /// <summary>
-    /// The Sous-Chef Helpers upgrade — the core idle mechanic (concept §3). Each helper throws a
-    /// knife on its own timer, aimed straight at an ingredient the oldest waiting customer needs.
-    /// Straight shots only: helpers are steady, the player's bank shots are what stay skilful.
+    /// The Sous-Chef Helpers upgrade (concept §3). Helpers work alongside the player, not instead
+    /// of them: they start throwing when the player throws, keep throwing on their own timers
+    /// while the player's knife flies, and stop when it lands — <see cref="KnifeManager"/> then
+    /// recalls their knives too. Each throw aims straight at an ingredient the oldest waiting
+    /// customer needs: helpers are steady, the player's bank shots are what stay skilful.
     ///
     /// Plain C#, ticked by the run owner with the run clock, so helpers pause with the run.
     /// </summary>
@@ -17,12 +19,16 @@ namespace SliceNServe.Board
     {
         public const int MaxHelpers = 8;
 
+        /// <summary>How quickly the crew follows the player's throw, one helper after another.</summary>
+        public const float FollowDelay = 0.15f;
+
         private readonly RuntimeTuning _tuning;
         private readonly KnifeManager _knives;
         private readonly IngredientSpawner _board;
         private readonly IOrderQueue _orders;
         private readonly float[] _timers = new float[MaxHelpers];
         private int _staggeredFor = -1;
+        private bool _following;
 
         public SousChefCrew(RuntimeTuning tuning, KnifeManager knives, IngredientSpawner board, IOrderQueue orders)
         {
@@ -37,13 +43,16 @@ namespace SliceNServe.Board
         public void Tick(float delta)
         {
             int count = HelperCount;
-            if (count == 0) return;
+            bool follow = count > 0 && _knives.PlayerKnifeLive;
+            if (!follow) { _following = false; return; }
 
-            // Spread the helpers evenly across one interval, so they don't all throw at once.
-            if (count != _staggeredFor)
+            // A fresh throw (or a sous-chef bought mid-throw): each helper follows the player in
+            // quick succession, then keeps their own interval.
+            if (!_following || count != _staggeredFor)
             {
-                for (int i = 0; i < count; i++) _timers[i] = _tuning.HelperLaunchInterval * (i + 1) / (count + 1);
+                for (int i = 0; i < count; i++) _timers[i] = FollowDelay * (i + 1);
                 _staggeredFor = count;
+                _following = true;
             }
 
             for (int i = 0; i < count; i++)
@@ -90,6 +99,9 @@ namespace SliceNServe.Board
                 int best = NearestNeeded(oldest, live, from);
                 if (best >= 0) return best;
             }
+
+            // In a rush only the front customer takes ingredients: no point feeding the others.
+            if (orders.FrontOnly) return Nearest(live, from, null);
 
             for (int o = 0; o < orders.ActiveCount; o++)
             {

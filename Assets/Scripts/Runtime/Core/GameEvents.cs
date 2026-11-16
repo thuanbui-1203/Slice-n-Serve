@@ -94,6 +94,13 @@ namespace SliceNServe.Core
         public ReputationChanged(int reputation, int delta) { Reputation = reputation; Delta = delta; }
     }
 
+    /// <summary>§4: a rush hour began or ended.</summary>
+    public readonly struct RushHourChanged
+    {
+        public readonly bool Active;
+        public RushHourChanged(bool active) { Active = active; }
+    }
+
     public readonly struct GameOver
     {
         public readonly GameOverReason Reason;

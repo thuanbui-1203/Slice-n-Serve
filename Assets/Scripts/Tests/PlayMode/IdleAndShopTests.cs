@@ -50,22 +50,48 @@ namespace SliceNServe.Tests
         }
 
         [UnityTest]
-        public IEnumerator SousChefs_ThrowOnTheirOwn_OnlyWhileTheRunIsLive()
+        public IEnumerator SousChefs_WaitForThePlayersThrow()
         {
             _services.Tuning.HelperCount = 2;
+            _runner.StartRun();
 
             Time.timeScale = 5f;
             float until = Time.time + _services.Tuning.HelperLaunchInterval * 1.5f;
             while (Time.time < until) yield return null;
-            Assert.That(_launches.Count, Is.EqualTo(0), "no helper throws on the title card");
+            Assert.That(_launches.Count, Is.EqualTo(0), "no helper throws until the player throws");
 
-            _runner.StartRun();
-            until = Time.time + _services.Tuning.HelperLaunchInterval * 1.2f;
-            while (Time.time < until) yield return null;
+            _knives.Launch(new Vector2(0.4f, 1f).normalized * 20f, LaunchSource.Manual);
+            until = Time.time + SousChefCrew.FollowDelay * 4f;
+            while (Time.time < until && _knives.PlayerKnifeLive) yield return null;
 
             int helperThrows = _launches.FindAll(l => l.Source == LaunchSource.Helper).Count;
-            Assert.That(helperThrows, Is.GreaterThanOrEqualTo(2), "each helper throws once per interval");
-            Assert.That(_knives.CanLaunch, Is.True, "helper knives never block the player's knife");
+            Assert.That(helperThrows, Is.EqualTo(2), "each helper follows the player's throw at once");
+        }
+
+        [UnityTest]
+        public IEnumerator SousChefKnives_StopWhenThePlayersKnifeDoes()
+        {
+            _services.Tuning.HelperCount = 3;
+            _runner.StartRun();
+            Time.timeScale = 5f;
+
+            _knives.Launch(new Vector2(0.4f, 1f).normalized * 20f, LaunchSource.Manual);
+            float timeout = Time.realtimeSinceStartup + 20f;
+            int maxLive = 0;
+            while (_knives.PlayerKnifeLive && Time.realtimeSinceStartup < timeout)
+            {
+                maxLive = Mathf.Max(maxLive, _knives.LiveCount);
+                yield return null;
+            }
+
+            Assert.That(maxLive, Is.GreaterThan(1), "the crew was throwing alongside the player");
+            Assert.That(_knives.PlayerKnifeLive, Is.False);
+            Assert.That(_knives.LiveCount, Is.EqualTo(0), "the player's knife landing recalls every helper knife");
+
+            int before = _launches.Count;
+            float wait = Time.time + _services.Tuning.HelperLaunchInterval * 1.5f;
+            while (Time.time < wait) yield return null;
+            Assert.That(_launches.Count, Is.EqualTo(before), "and the crew stays idle until the next throw");
         }
 
         [UnityTest]

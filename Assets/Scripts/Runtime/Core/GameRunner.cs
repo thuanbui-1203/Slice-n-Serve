@@ -9,7 +9,7 @@ namespace SliceNServe.Core
 {
     /// <summary>
     /// Builds the run from the services GameBootstrap installed, closes the loop between them,
-    /// and owns the run lifecycle: title → playing ⇄ paused → over → restart.
+    /// and owns the run lifecycle: main menu → playing ⇄ paused (or shopping) → over → restart.
     ///
     /// This is the composition root, so it is the one place gameplay and UI meet. Ordering
     /// matters: the board bounds must exist before the knife (the knife needs the play area)
@@ -27,14 +27,26 @@ namespace SliceNServe.Core
         [SerializeField] private TrajectoryPreview trajectoryPreview;
         [SerializeField] private OrderSpawner orderSpawner;
         [SerializeField] private BoardFx boardFx;
+        [SerializeField] private KitchenDecor kitchen;
 
         [Header("Presentation (optional — the run works without it)")]
         [SerializeField] private OrderTicketHud hud;
         [SerializeField] private RunOverlay overlay;
         [SerializeField] private GameAudio gameAudio;
         [SerializeField] private ShopPanel shop;
+        [SerializeField] private MainMenu mainMenu;
+        [SerializeField] private SettingsPanel settingsPanel;
+        [Tooltip("The HUD's Upgrades button: opens the shop mid-run, with the run paused behind it.")]
+        [SerializeField] private UnityEngine.UI.Button hudUpgrades;
+        [SerializeField] private HudBanner banner;
+
+        // "Play again" reloads the scene for a clean board; this carries the intent across the
+        // load, so the new scene skips the menu. Consumed in Start.
+        private static bool _startOnLoad;
 
         private ServiceRegistry _services;
+        private TimeRampDifficultyProvider _difficulty;
+        private int _demandLevel;
         private SousChefCrew _crew;
         private int _runCash;
         private int _served;
@@ -68,7 +80,8 @@ namespace SliceNServe.Core
 
             Queue = new LocalOrderQueue(events, tuning);
             Reputation = new ReputationService(events, tuning);
-            orderSpawner.Initialize(Queue, _services.Clock, tuning, new ConstantDifficultyProvider(), ingredients);
+            _difficulty = new TimeRampDifficultyProvider(_services.Clock, tuning.Config);
+            orderSpawner.Initialize(Queue, _services.Clock, tuning, _difficulty, ingredients);
             _crew = new SousChefCrew(tuning, knives, ingredients, Queue);
 
             // The loop: slices feed orders, orders pay or cost reputation, reputation ends the run.
@@ -78,16 +91,29 @@ namespace SliceNServe.Core
             events.Subscribe<GameOver>(OnGameOver);
 
             if (boardFx != null) boardFx.Initialize(events);
-            if (gameAudio != null) gameAudio.Initialize(events);
+            if (kitchen != null) kitchen.Initialize(tuning.Config, events);
+            if (gameAudio != null)
+            {
+                gameAudio.Initialize(events);
+                if (_services.Settings != null) gameAudio.BindSettings(_services.Settings);
+            }
             if (hud != null) hud.Initialize(Queue, events, _services.Wallet, Reputation.StartReputation);
             if (shop != null)
             {
                 shop.Initialize(_services.Upgrades, _services.Wallet);
                 if (gameAudio != null) shop.BuyAttempted += gameAudio.PlayPurchase;
             }
+            if (settingsPanel != null && _services.Settings != null) settingsPanel.Initialize(_services.Settings);
+            if (hudUpgrades != null) hudUpgrades.onClick.AddListener(OpenShopMidRun);
 
             ingredients.FillImmediately();
             EnterTitle();
+
+            if (_startOnLoad)
+            {
+                _startOnLoad = false;
+                StartRun();
+            }
         }
 
         private void OnDestroy()
@@ -108,14 +134,49 @@ namespace SliceNServe.Core
             if (_services == null) return;
 
             _services.Clock.Advance();
-            if (State == RunState.Playing) _crew.Tick(_services.Clock.DeltaTime);
+            if (State == RunState.Playing)
+            {
+                _crew.Tick(_services.Clock.DeltaTime);
+                UpdateRunEvents();
+            }
 
             // Pause is a keyboard convenience on PC; mobile pauses when the app loses focus.
+            // Escape backs out of whatever panel is on top first.
             Keyboard keyboard = Keyboard.current;
             if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
             {
-                if (State == RunState.Playing) Pause();
+                if (shop != null && shop.IsOpen) shop.Close();
+                else if (settingsPanel != null && settingsPanel.IsOpen) settingsPanel.Close();
+                else if (State == RunState.Playing) Pause();
                 else if (State == RunState.Paused) Resume();
+            }
+        }
+
+        /// <summary>Rush hour starts and stops, and demand levels up, on the run clock.</summary>
+        private void UpdateRunEvents()
+        {
+            var config = _services.Tuning.Config;
+            RushHour rushHour = orderSpawner.Rush;
+
+            bool rush = rushHour.IsActive;
+            if (rush != Queue.FrontOnly)
+            {
+                Queue.FrontOnly = rush;
+                _services.Events.Publish(new RushHourChanged(rush));
+            }
+            if (banner != null)
+            {
+                banner.SetRush(rush, orderSpawner.RushCustomersWaiting(), config.rushCashBonus);
+                if (!rush && rushHour.UntilNext > 0f && rushHour.UntilNext <= 5f)
+                    banner.Notify($"Rush hour in {Mathf.CeilToInt(rushHour.UntilNext)}...", 0.25f);
+            }
+
+            int level = _difficulty.DemandLevel;
+            if (level > _demandLevel)
+            {
+                _demandLevel = level;
+                int pay = Mathf.RoundToInt(level * config.demandRewardPerLevel * 100f);
+                if (banner != null) banner.Notify($"Bigger orders!  Level {level + 1}  -  +{pay}% pay");
             }
         }
 
@@ -155,32 +216,57 @@ namespace SliceNServe.Core
         {
             State = RunState.Title;
             SetLive(false);
-            ShowTitle();
+            ShowMenu();
 
-            if (overlay == null) StartRun();
+            if (mainMenu == null)
+            {
+                Debug.LogWarning("GameRunner: no MainMenu in the scene, so the run starts straight away. "
+                               + "Run Slice & Serve → Setup → 2. Build Everything to regenerate Game.unity.", this);
+                StartRun();
+            }
         }
 
-        private void ShowTitle()
+        private void ShowMenu()
         {
-            int bank = _services.Wallet.Amount;
-            ShowOverlay(
-                "Slice & Serve",
-                "Drag <b>back</b> from anywhere and release to throw the knife.\n"
-              + "It bounces off the walls and slices what it touches.\n"
-              + "Sliced ingredients go to the customer who has waited longest.\n"
-              + "Serve before their patience runs out!"
-              + (bank > 0 ? $"\n\nIn the till: <b>${bank}</b> — spend it on upgrades." : ""),
-                "Open the kitchen",
-                StartRun,
-                "Upgrades",
-                () => OpenShop(ShowTitle));
+            if (mainMenu == null) return;
+
+            mainMenu.Show(_services.Wallet.Amount, _services.Save.Data.bestServed, AnyUpgradeAffordable(),
+                          StartRun, () => OpenShop(ShowMenu), OpenSettings, QuitGame);
         }
 
-        /// <summary>Starts the run from the title card. Public so a test or a future menu can skip the card.</summary>
+        /// <summary>The menu's Exit. Progress is saved first; in the Editor it stops Play mode.</summary>
+        private void QuitGame()
+        {
+            _services.Save.Save();
+            _services.Settings?.Save();
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
+        }
+
+        private void OpenSettings()
+        {
+            if (settingsPanel == null) { ShowMenu(); return; }
+            settingsPanel.Open(ShowMenu);
+        }
+
+        private bool AnyUpgradeAffordable()
+        {
+            var upgrades = _services.Upgrades;
+            if (upgrades == null) return false;
+            for (int i = 0; i < upgrades.Catalog.Count; i++)
+                if (upgrades.CanBuy(upgrades.Catalog[i])) return true;
+            return false;
+        }
+
+        /// <summary>Starts the run from the main menu. Public so a test can skip the menu.</summary>
         public void StartRun()
         {
             if (State != RunState.Title) return;
 
+            if (mainMenu != null) mainMenu.Hide();
             if (overlay != null) overlay.Hide();
             State = RunState.Playing;
             SetLive(true);
@@ -188,11 +274,33 @@ namespace SliceNServe.Core
 
         private void Pause()
         {
+            Freeze();
+            ShowPause();
+        }
+
+        private void ShowPause()
+            => ShowOverlay("Paused", "The customers will wait. For now.", "Resume", Resume,
+                           "Upgrades", () => OpenShop(ShowPause));
+
+        /// <summary>
+        /// The HUD button: spend the cash you are earning without leaving the run. The run is
+        /// frozen while the shop is open, and a purchase applies the moment it is made — new
+        /// customers, the next throw and the sous-chefs all read the upgraded tuning.
+        /// </summary>
+        public void OpenShopMidRun()
+        {
+            if (State != RunState.Playing || shop == null) return;
+
+            Freeze();
+            shop.Open(Resume);
+        }
+
+        private void Freeze()
+        {
             State = RunState.Paused;
             aimInput.CancelDrag();
             SetLive(false);
             Time.timeScale = 0f;
-            ShowOverlay("Paused", "The customers will wait. For now.", "Resume", Resume);
         }
 
         private void Resume()
@@ -209,6 +317,7 @@ namespace SliceNServe.Core
             aimInput.CancelDrag();
             SetLive(false);
             knives.ReturnAllKnives();
+            if (banner != null) banner.SetRush(false, 0, 1f);
 
             // End of run is the main save checkpoint: the cash is banked for the shop.
             SaveData save = _services.Save.Data;
@@ -227,22 +336,24 @@ namespace SliceNServe.Core
                 $"Your reputation ran out.\n\n"
               + $"Orders served: <b>{_served}</b>  (best {save.bestServed})\n"
               + $"Cash earned: <b>${_runCash}</b>  ·  In the till: <b>${_services.Wallet.Amount}</b>\n"
-              + $"Best combo: <b>x{_bestCombo}</b>",
+              + $"Best combo: <b>x{_bestCombo}</b>  ·  Order level reached: <b>{_demandLevel + 1}</b>",
                 "Play again",
-                Restart,
-                "Upgrades",
-                () => OpenShop(ShowResults));
+                () => Reload(startRun: true),
+                "Main menu",
+                () => Reload(startRun: false));
         }
 
-        /// <summary>The shop is only reachable between runs, so a purchase can never change a live order.</summary>
+        /// <summary>Opens the shop over whatever card is showing, and returns to it on Back.
+        /// Patience is fixed at spawn, so a purchase never rewrites a live order.</summary>
         private void OpenShop(System.Action onClose)
         {
             if (shop == null) { onClose(); return; }
             shop.Open(onClose);
         }
 
-        private void Restart()
+        private void Reload(bool startRun)
         {
+            _startOnLoad = startRun;
             Time.timeScale = 1f;
             SceneManager.LoadScene(gameObject.scene.buildIndex);
         }
@@ -259,6 +370,7 @@ namespace SliceNServe.Core
             aimInput.Accepting = live;
             orderSpawner.Running = live;
             _services.Clock.SetPaused(!live);
+            if (hudUpgrades != null) hudUpgrades.gameObject.SetActive(live);
         }
     }
 }

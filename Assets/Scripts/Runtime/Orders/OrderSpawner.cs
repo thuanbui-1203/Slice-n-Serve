@@ -29,6 +29,9 @@ namespace SliceNServe.Orders
 
         public bool Running { get; set; }
 
+        /// <summary>The rush-hour schedule and its waves. Null until initialised.</summary>
+        public RushHour Rush { get; private set; }
+
         public void Initialize(IOrderQueue queue, RunClock clock, RuntimeTuning tuning,
                                IDifficultyProvider difficulty, IngredientSpawner board)
         {
@@ -37,6 +40,7 @@ namespace SliceNServe.Orders
             _tuning = tuning;
             _difficulty = difficulty;
             _board = board;
+            Rush = new RushHour(tuning.Config);
 
             _weights = new float[dishes.Length];   // sized once: no per-spawn allocation
             _untilNextSpawn = 0f;                  // the first customer arrives immediately
@@ -49,6 +53,11 @@ namespace SliceNServe.Orders
             float dt = _clock.DeltaTime;
             _queue.Tick(dt);
 
+            // Rush hour: a whole wave at once, and no walk-ins until the rush is over.
+            int wave = Rush.Tick(dt, RushCustomersWaiting());
+            if (wave > 0) { SpawnWave(wave); return; }
+            if (Rush.IsActive) return;
+
             if (_queue.ActiveCount >= _tuning.MaxActiveOrders) return;
 
             _untilNextSpawn -= dt;
@@ -56,10 +65,26 @@ namespace SliceNServe.Orders
 
             // Resolved per spawn, so §4 can change difficulty mid-run without touching live orders.
             _untilNextSpawn = _tuning.OrderSpawnInterval * _difficulty.OrderSpawnIntervalScale;
-            Spawn();
+            Spawn(-1);
         }
 
-        private void Spawn()
+        /// <summary>Wave customers still in line (served and expired ones have left the queue).</summary>
+        public int RushCustomersWaiting()
+        {
+            int n = 0;
+            for (int i = 0; i < _queue.ActiveCount; i++)
+                if (_queue[i].RushOrder && !_queue[i].IsClosed) n++;
+            return n;
+        }
+
+        private void SpawnWave(int size)
+        {
+            for (int place = 0; place < size; place++) Spawn(place);
+            _untilNextSpawn = _tuning.OrderSpawnInterval;   // a breather once the rush ends
+        }
+
+        /// <param name="rushPlace">Place in a rush wave's line (0 = front), or -1 for a walk-in.</param>
+        private void Spawn(int rushPlace)
         {
             if (dishes.Length == 0 || customers.Length == 0) return;
 
@@ -67,8 +92,25 @@ namespace SliceNServe.Orders
             DishDefinition dish = PickDish();
             float duration = PatienceSystem.ResolveDuration(_tuning, customer, _difficulty);
 
-            _queue.Add(OrderInstance.Create(_nextOrderId++, dish, customer, _clock.Elapsed, duration));
+            // A wave forms a line: the further back, the longer they are prepared to wait.
+            BoardConfig config = _tuning.Config;
+            bool rush = rushPlace >= 0;
+            if (rush) duration += rushPlace * config.rushPatiencePerPlace * _tuning.PatienceUpgradeMultiplier;
+
+            // Demand growth: bigger orders, paying more, with no ceiling. Rush orders pay a bonus.
+            // The tiny per-place offset keeps the line's order unambiguous to "oldest first".
+            int level = _difficulty.DemandLevel;
+            float spawnTime = _clock.Elapsed + (rush ? rushPlace * 0.001f : 0f);
+            OrderInstance order = OrderInstance.Create(_nextOrderId++, dish, customer, spawnTime, duration,
+                level > 0 ? count => TimeRampDifficultyProvider.RequiredAt(count, level, config) : null);
+            order.RushOrder = rush;
+            order.RewardScale = TimeRampDifficultyProvider.RewardScaleAt(level, config) * (rush ? config.rushCashBonus : 1f);
+
+            _queue.Add(order);
         }
+
+        /// <summary>For the HUD: the demand level new customers are ordering at.</summary>
+        public int DemandLevel => _difficulty != null ? _difficulty.DemandLevel : 0;
 
         private CustomerDefinition PickCustomer()
         {

@@ -35,11 +35,13 @@ namespace SliceNServe.Orders
         /// <summary>
         /// Resolved ONCE at spawn, so a later tuning change never retroactively rewrites a live
         /// customer. Required by §4 and for PvP fairness (plan §6.4).
+        ///
+        /// The difficulty ramp can only push patience down to <see cref="RuntimeTuning.MinPatienceSeconds"/>;
+        /// the patience upgrade multiplies after the floor, so it still pays off at full difficulty.
         /// </summary>
         public static float ResolveDuration(RuntimeTuning tuning, CustomerDefinition customer, IDifficultyProvider difficulty)
-            => tuning.BasePatienceSeconds
-             * customer.PatienceMultiplier
-             * difficulty.PatienceScale
+            => System.Math.Max(tuning.MinPatienceSeconds,
+                               tuning.BasePatienceSeconds * customer.PatienceMultiplier * difficulty.PatienceScale)
              * tuning.PatienceUpgradeMultiplier;
     }
 }

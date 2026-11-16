@@ -57,6 +57,37 @@ namespace SliceNServe.Tests
         }
 
         [Test]
+        public void RushHour_CreditsOnlyTheFrontCustomer_AndWastesTheRest()
+        {
+            OrderInstance front = Order(1f, (_cheese, 1));
+            OrderInstance behind = Order(2f, (_tomato, 1));
+            _queue.FrontOnly = true;
+
+            _queue.SubmitIngredient(_tomato, Vector2.zero);
+
+            Assert.That(behind.Lines[0].Fulfilled, Is.EqualTo(0), "no passing down the line in a rush");
+            Assert.That(_wasted.Count, Is.EqualTo(1));
+
+            _queue.SubmitIngredient(_cheese, Vector2.zero);
+            Assert.That(_served.Count, Is.EqualTo(1), "the front customer is served");
+            Assert.That(front.State, Is.EqualTo(PatienceState.Served));
+
+            _queue.SubmitIngredient(_tomato, Vector2.zero);
+            Assert.That(behind.Lines[0].Fulfilled, Is.EqualTo(1), "the next customer is now at the front");
+        }
+
+        [Test]
+        public void RewardScale_RaisesThePay()
+        {
+            OrderInstance o = Order(1f, (_tomato, 1));
+            o.RewardScale = 2.4f;
+
+            _queue.SubmitIngredient(_tomato, Vector2.zero);
+
+            Assert.That(_served[0].Cash, Is.EqualTo(24));
+        }
+
+        [Test]
         public void Credit_SkipsOlderOrdersThatDoNotNeedIt()
         {
             OrderInstance older = Order(1f, (_cheese, 1));

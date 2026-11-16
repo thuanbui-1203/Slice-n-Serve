@@ -150,6 +150,25 @@ namespace SliceNServe.UI
             return null;
         }
 
+        /// <summary>
+        /// A rush wave can line up more tickets than the strip holds at full size: shrink the
+        /// whole strip (from its top-left pivot) until every ticket fits, and grow back as the
+        /// line clears. Eased, so a wave arriving reads as the line squeezing up.
+        /// </summary>
+        private void FitStrip(float dt)
+        {
+            var layout = container.GetComponent<HorizontalLayoutGroup>();
+            float spacing = layout != null ? layout.spacing : 0f;
+            float ticketWidth = ((RectTransform)ticketPrefab.transform).sizeDelta.x;
+
+            int n = _tickets.Count;
+            float needed = n * ticketWidth + Mathf.Max(0, n - 1) * spacing;
+            float target = needed > container.rect.width ? container.rect.width / needed : 1f;
+
+            float scale = Mathf.MoveTowards(container.localScale.x, target, dt * 2.5f);
+            container.localScale = new Vector3(scale, scale, 1f);
+        }
+
         private void Fly(Vector2 worldFrom, RectTransform target)
         {
             int i = _nextFlyer;
@@ -190,6 +209,8 @@ namespace SliceNServe.UI
                 Destroy(ticket.gameObject);
                 _tickets.RemoveAt(i);
             }
+
+            FitStrip(dt);
 
             for (int i = 0; i < FlyerCount; i++)
             {

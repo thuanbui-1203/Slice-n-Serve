@@ -26,6 +26,12 @@ namespace SliceNServe.Orders
         public float RemainingPatience;
         public PatienceState State = PatienceState.Normal;
 
+        /// <summary>Multiplies the dish's cash: demand growth and rush hour both raise it. Fixed at spawn.</summary>
+        public float RewardScale = 1f;
+
+        /// <summary>Placed during a rush hour: pays the rush bonus, for the HUD to mark.</summary>
+        public bool RushOrder;
+
         public bool IsClosed => State == PatienceState.Served || State == PatienceState.Expired;
 
         public float PatienceFraction => PatienceDuration <= 0f ? 0f : RemainingPatience / PatienceDuration;
@@ -61,14 +67,17 @@ namespace SliceNServe.Orders
         }
 
         /// <summary>Builds an order from a recipe. Allocates once per order, never per frame.</summary>
+        /// <param name="requiredCount">Maps a recipe count to this order's count — demand growth.
+        /// Null orders the recipe as written.</param>
         public static OrderInstance Create(int orderId, DishDefinition dish, CustomerDefinition customer,
-                                           float spawnTime, float patienceDuration)
+                                           float spawnTime, float patienceDuration, System.Func<int, int> requiredCount = null)
         {
             var lines = new OrderLine[dish.Ingredients.Count];
             for (int i = 0; i < lines.Length; i++)
             {
                 IngredientRequirement r = dish.Ingredients[i];
-                lines[i] = new OrderLine { Ingredient = r.ingredient, Required = r.count, Fulfilled = 0 };
+                int required = requiredCount != null ? System.Math.Max(r.count, requiredCount(r.count)) : r.count;
+                lines[i] = new OrderLine { Ingredient = r.ingredient, Required = required, Fulfilled = 0 };
             }
 
             return new OrderInstance

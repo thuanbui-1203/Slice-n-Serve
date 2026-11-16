@@ -51,6 +51,13 @@ namespace SliceNServe.Tests
                 var runner = Object.FindAnyObjectByType<GameRunner>();
                 yield return Render(cam, rt, Path.Combine(dir, $"{label}_1_title.png"));
 
+                var settings = Object.FindAnyObjectByType<SettingsPanel>(FindObjectsInactive.Include);
+                settings.Open(null);
+                for (int i = 0; i < 20; i++) yield return null;
+                yield return Render(cam, rt, Path.Combine(dir, $"{label}_0_settings.png"));
+                settings.Close();
+                for (int i = 0; i < 20; i++) yield return null;
+
                 // The shop mid-progression: some cash, a few levels bought, one maxed-out row.
                 ServiceRegistry services = ServiceRegistry.Current;
                 services.Wallet.Add(2000);

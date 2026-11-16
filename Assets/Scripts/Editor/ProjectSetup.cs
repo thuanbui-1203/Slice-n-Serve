@@ -31,6 +31,10 @@ namespace SliceNServe.EditorTools
     {
         private const string ArtPlaceholders = "Assets/Art/Placeholders";
         private const string ArtMart = "Assets/Art/Pixel_Mart";
+        private const string ArtFpp = "Assets/Art/FoodPingPong";   // menu art, font and music from Food-Ping-Pong
+        private const string FppFontPath = ArtFpp + "/Fonts/ScoreDozer SDF.asset";
+        private const string FppUiSheet = ArtFpp + "/UI/UI.png";
+        private const string FppBooksSheet = ArtFpp + "/UI/UI books.png";
         private const string SettingsDir = "Assets/Settings";
         private const string DataDir = "Assets/ScriptableObjects";
         private const string PrefabDir = "Assets/Prefabs";
@@ -73,6 +77,8 @@ namespace SliceNServe.EditorTools
             ConfigurePhysics();
             ConfigurePlayer();
             ConfigureTextures();
+            ConfigureFppTextures();
+            ConfigureRestaurantTextures();
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -224,11 +230,38 @@ namespace SliceNServe.EditorTools
             }
         }
 
+        /// <summary>Food-Ping-Pong's pixel UI keeps its own slicing (copied .meta files); this only
+        /// makes sure it renders crisp. The Dark UI icons are smooth art and stay bilinear.</summary>
+        private static void ConfigureFppTextures()
+        {
+            foreach (string file in Directory.GetFiles(ArtFpp, "*.png", SearchOption.AllDirectories))
+            {
+                string path = file.Replace('\\', '/');
+                var importer = (TextureImporter)AssetImporter.GetAtPath(path);
+                if (importer == null) continue;
+
+                bool pixel = path.Contains("/UI/") || path.EndsWith("KN004.png");
+                FilterMode filter = pixel ? FilterMode.Point : FilterMode.Bilinear;
+                if (importer.textureType == TextureImporterType.Sprite && importer.filterMode == filter
+                    && importer.textureCompression == TextureImporterCompression.Uncompressed && !importer.mipmapEnabled) continue;
+
+                importer.textureType = TextureImporterType.Sprite;
+                importer.filterMode = filter;
+                importer.textureCompression = TextureImporterCompression.Uncompressed;
+                importer.mipmapEnabled = false;
+                importer.alphaIsTransparency = true;
+                importer.SaveAndReimport();
+            }
+        }
+
         private static readonly string[] UsedMartSprites =
         {
             "potato", "bell_pepper", "mushroom_white", "white_cheese_piece", "cabbage", "egg_white",
             "bowl", "teakettle", "frying pan", "chopping board",
-            "kitchen_knife_set", "scissors", "basket_yellow", "coffee_bag", "spatula"
+            "kitchen_knife_set", "scissors", "basket_yellow", "coffee_bag", "spatula",
+            // kitchen decor around the board
+            "whisk", "rolling pin", "cooking_oil", "olive_oil", "salt", "sugar", "flour", "ketchup",
+            "mustard", "milk_bottle", "egg_box", "butter", "meat1", "fish"
         };
 
         private static PhysicsMaterial2D PhysicsMaterial(string path)
@@ -257,6 +290,16 @@ namespace SliceNServe.EditorTools
             EnsureFolder(DataDir + "/Customers");
 
             var config = LoadOrCreate<BoardConfig>(DataDir + "/BoardConfig.asset");
+
+            // The board layout is part of the scene design, not a balance knob: the kitchen decor
+            // and HUD are laid out around it, so it is written here rather than left to the asset.
+            var defaults = ScriptableObject.CreateInstance<BoardConfig>();
+            config.viewBounds = defaults.viewBounds;
+            config.worldBounds = defaults.worldBounds;
+            config.launcherPosition = defaults.launcherPosition;
+            config.ingredientZone = defaults.ingredientZone;
+            Object.DestroyImmediate(defaults);
+            EditorUtility.SetDirty(config);
 
             IngredientDefinition potato = Ingredient("potato", "Potato", "potato", new Color(0.85f, 0.68f, 0.40f), 1f);
             IngredientDefinition pepper = Ingredient("pepper", "Pepper", "bell_pepper", new Color(0.92f, 0.30f, 0.20f), 1f);
@@ -561,7 +604,7 @@ namespace SliceNServe.EditorTools
 
         private static ShopCard BuildShopCardPrefab()
         {
-            TMP_FontAsset font = Font();
+            TMP_FontAsset font = TooltipFont(Font());
 
             var root = new GameObject("ShopCard", typeof(RectTransform));
             ((RectTransform)root.transform).sizeDelta = new Vector2(440f, 300f);
@@ -591,6 +634,16 @@ namespace SliceNServe.EditorTools
             buy.targetGraphic = buyBg;
             TextMeshProUGUI price = Text("Price", buyRt, font, 38f, Color.white, TextAlignmentOptions.Center, bold: true);
             Stretch(price.rectTransform);
+
+            // The Slime pixel fonts are drawn wide-spaced: pull the letters together, and drop fake
+            // bold, which only smears pixel strokes.
+            if (font != Font())
+                foreach (TextMeshProUGUI t in new[] { title, level, effect, price })
+                {
+                    t.fontStyle = FontStyles.Normal;
+                    t.characterSpacing = -9f;
+                }
+            if (font != Font()) title.fontSize = 31f;   // "Fresh Deliveries" must fit beside the icon
 
             SetRefs(card, ("icon", icon), ("title", title), ("level", level), ("effect", effect), ("buy", buy),
                     ("buyBackground", buyBg), ("price", price), ("punchTarget", (RectTransform)root.transform));
@@ -667,26 +720,173 @@ namespace SliceNServe.EditorTools
             var fx = new GameObject("BoardFx").AddComponent<BoardFx>();
             SetRefs(fx, ("particleSprite", Placeholder("square")), ("ringSprite", Placeholder("circle")), ("popupFont", font));
 
+            KitchenDecor kitchen = BuildKitchen();
+
             var audioGo = new GameObject("Audio");
             var audioSource = audioGo.AddComponent<AudioSource>();
             audioSource.playOnAwake = false;
+            var musicSource = audioGo.AddComponent<AudioSource>();
+            musicSource.playOnAwake = false;
+            musicSource.loop = true;
             var gameAudio = audioGo.AddComponent<GameAudio>();
-            SetRefs(gameAudio, ("source", audioSource));
+            SetRefs(gameAudio, ("source", audioSource), ("musicSource", musicSource),
+                    ("music", AssetDatabase.LoadAssetAtPath<AudioClip>(ArtFpp + "/Audio/Song1.mp3")));
 
-            (OrderTicketHud hud, RunOverlay overlay, ShopPanel shop) = BuildHud(cam, ticketPrefab, cardPrefab, font, gameAudio);
+            Menus menus = BuildHud(cam, ticketPrefab, cardPrefab, font, gameAudio);
+            SetArray(aim, "blockers", new Object[] { menus.HudUpgrades.transform });
 
             var runner = new GameObject("Runner").AddComponent<GameRunner>();
             SetRefs(runner,
                 ("bootstrap", bootstrap), ("bounds", bounds), ("ingredients", spawner), ("knives", knives),
-                ("aimInput", aim), ("trajectoryPreview", preview), ("orderSpawner", orders), ("boardFx", fx),
-                ("hud", hud), ("overlay", overlay), ("gameAudio", gameAudio), ("shop", shop));
+                ("aimInput", aim), ("trajectoryPreview", preview), ("orderSpawner", orders), ("boardFx", fx), ("kitchen", kitchen),
+                ("hud", menus.Hud), ("overlay", menus.Overlay), ("gameAudio", gameAudio), ("shop", menus.Shop),
+                ("mainMenu", menus.MainMenu), ("settingsPanel", menus.Settings), ("hudUpgrades", menus.HudUpgrades), ("banner", menus.Banner));
 
             EditorSceneManager.SaveScene(scene, ScenePath);
         }
 
-        private static (OrderTicketHud, RunOverlay, ShopPanel) BuildHud(Camera cam, OrderTicketView ticketPrefab, ShopCard cardPrefab,
-                                                                        TMP_FontAsset font, GameAudio gameAudio)
+        // Riley's "Restaurant Character and Tileset" (rkuhlf-assets.itch.io/restaurant-pixel-art, CC0).
+        private const string RestaurantDir = "Assets/Art/Spritesheets";
+        private const string ChefSheet = RestaurantDir + "/ChefSheet.png";
+
+        /// <summary>The cooking line and side shelves, dressed with Pixel Mart props and the
+        /// restaurant pack's chef, pot and meats. Anything missing is simply left out.</summary>
+        private static KitchenDecor BuildKitchen()
         {
+            var kitchen = new GameObject("Kitchen").AddComponent<KitchenDecor>();
+            Sprite brick = RestaurantSprite("Tiles", 8);
+            SetRefs(kitchen, ("square", Placeholder("square")), ("circle", Placeholder("circle")),
+                    ("wallTile", brick != null ? brick : Placeholder("floor_tile")));
+            if (brick != null) SetColor(kitchen, "wallColor", new Color(0.5f, 0.42f, 0.42f));   // brick, dimmed behind the board
+
+            SetArray(kitchen, "pans", Marts("frying pan"));
+            SetArray(kitchen, "pots", Restaurant(("ChefTools", 5)).Concat(Marts("teakettle")).ToArray());
+            SetArray(kitchen, "counterItems", Marts("chopping board").Concat(Restaurant(("Meat", 1), ("Meat", 3), ("Meat", 0))).ToArray());
+            SetArray(kitchen, "shelfItems", Marts("salt", "sugar", "flour", "cooking_oil", "ketchup", "mustard", "olive_oil", "milk_bottle", "egg_box", "butter"));
+            SetArray(kitchen, "hangingTools", Marts("spatula", "whisk", "rolling pin", "kitchen_knife_set"));
+
+            // The chef's Aseprite tags: Chop is frames 13–14, Jump 7–12.
+            Sprite[] chef = ChefFrames();
+            if (chef.Length >= 15)
+            {
+                SetArray(kitchen, "chefChop", new Object[] { chef[13], chef[14] });
+                SetArray(kitchen, "chefCheer", chef.Skip(7).Take(6).ToArray<Object>());
+            }
+            return kitchen;
+        }
+
+        private static Object[] Marts(params string[] names) => names.Select(MartSprite).Where(s => s != null).ToArray<Object>();
+
+        private static Object[] Restaurant(params (string sheet, int index)[] picks)
+            => picks.Select(p => RestaurantSprite(p.sheet, p.index)).Where(s => s != null).ToArray<Object>();
+
+        private static Sprite RestaurantSprite(string sheet, int index)
+            => AssetDatabase.LoadAllAssetsAtPath($"{RestaurantDir}/{sheet}.png").OfType<Sprite>().FirstOrDefault(s => s.name == $"{sheet}_{index}");
+
+        /// <summary>The chef sheet as a fixed 48×56 grid pivoted at the feet, in frame order. The
+        /// pack ships it cropped tight with centred pivots, which makes every frame jump about.</summary>
+        private static Sprite[] ChefFrames()
+        {
+            if (!File.Exists(ChefSheet)) return new Sprite[0];
+            return LoadAllAssetsSorted(ChefSheet);
+        }
+
+        private static Sprite[] LoadAllAssetsSorted(string path)
+            => AssetDatabase.LoadAllAssetsAtPath(path).OfType<Sprite>()
+                .OrderBy(s => int.TryParse(s.name.Substring(s.name.LastIndexOf('_') + 1), out int n) ? n : 0).ToArray();
+
+        /// <summary>Point-filtered pixel art, sliced into a fixed grid, keeping each cell's sprite
+        /// name (sheet_index) so references survive a re-slice.</summary>
+        private static void GridSlice(string path, int cellWidth, int cellHeight, Vector2 pivot, bool fullRect)
+        {
+            var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+            if (importer == null) return;
+
+            importer.textureType = TextureImporterType.Sprite;
+            importer.spriteImportMode = SpriteImportMode.Multiple;
+            importer.filterMode = FilterMode.Point;
+            importer.textureCompression = TextureImporterCompression.Uncompressed;
+            importer.mipmapEnabled = false;
+            var ts = new TextureImporterSettings();
+            importer.ReadTextureSettings(ts);
+            ts.spriteMeshType = fullRect ? SpriteMeshType.FullRect : SpriteMeshType.Tight;
+            importer.SetTextureSettings(ts);
+
+            importer.GetSourceTextureWidthAndHeight(out int width, out int height);
+            string sheet = Path.GetFileNameWithoutExtension(path);
+
+            var factory = new UnityEditor.U2D.Sprites.SpriteDataProviderFactories();
+            factory.Init();
+            var provider = factory.GetSpriteEditorDataProviderFromObject(importer);
+            provider.InitSpriteEditorDataProvider();
+
+            // Keep existing sprite IDs by name, so a re-run doesn't break references to them.
+            var existing = provider.GetSpriteRects().ToDictionary(r => r.name, r => r.spriteID);
+            var rects = new System.Collections.Generic.List<UnityEditor.SpriteRect>();
+            int columns = width / cellWidth;
+            for (int i = 0; i < columns; i++)
+            {
+                string name = $"{sheet}_{i}";
+                rects.Add(new UnityEditor.SpriteRect
+                {
+                    name = name,
+                    spriteID = existing.TryGetValue(name, out GUID id) ? id : GUID.Generate(),
+                    rect = new Rect(i * cellWidth, height - cellHeight, cellWidth, cellHeight),
+                    alignment = SpriteAlignment.Custom,
+                    pivot = pivot
+                });
+            }
+            provider.SetSpriteRects(rects.ToArray());
+
+            var names = provider.GetDataProvider<UnityEditor.U2D.Sprites.ISpriteNameFileIdDataProvider>();
+            names?.SetNameFileIdPairs(rects.Select(r => new SpriteNameFileIdPair(r.name, r.spriteID)));
+
+            provider.Apply();
+            importer.SaveAndReimport();
+        }
+
+        /// <summary>The restaurant pack's sheets: the chef re-gridded (see <see cref="ChefFrames"/>),
+        /// the tiles cut into 32 px squares for tiling, everything point-filtered.</summary>
+        private static void ConfigureRestaurantTextures()
+        {
+            if (!AssetDatabase.IsValidFolder(RestaurantDir)) return;
+
+            GridSlice(ChefSheet, 48, 56, new Vector2(0.5f, 0f), fullRect: false);
+            GridSlice(RestaurantDir + "/Tiles.png", 32, 32, new Vector2(0.5f, 0.5f), fullRect: true);
+
+            foreach (string sheet in new[] { "ChefTools", "Meat" })
+            {
+                var importer = AssetImporter.GetAtPath($"{RestaurantDir}/{sheet}.png") as TextureImporter;
+                if (importer == null || (importer.filterMode == FilterMode.Point && importer.textureCompression == TextureImporterCompression.Uncompressed)) continue;
+                importer.filterMode = FilterMode.Point;
+                importer.textureCompression = TextureImporterCompression.Uncompressed;
+                importer.SaveAndReimport();
+            }
+        }
+
+        private static void SetColor(Object target, string field, Color value)
+        {
+            var so = new SerializedObject(target);
+            so.FindProperty(field).colorValue = value;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private struct Menus
+        {
+            public OrderTicketHud Hud;
+            public RunOverlay Overlay;
+            public ShopPanel Shop;
+            public MainMenu MainMenu;
+            public SettingsPanel Settings;
+            public Button HudUpgrades;
+            public HudBanner Banner;
+        }
+
+        private static Menus BuildHud(Camera cam, OrderTicketView ticketPrefab, ShopCard cardPrefab,
+                                      TMP_FontAsset font, GameAudio gameAudio)
+        {
+            TMP_FontAsset pixelFont = PixelFont(font);
+
             // §1 plan §6.4: Screen Space Overlay, scale with screen size at 1920×1080, match 0.5.
             var canvasGo = new GameObject("HUD", typeof(RectTransform));
             var canvas = canvasGo.AddComponent<Canvas>();
@@ -706,7 +906,8 @@ namespace SliceNServe.EditorTools
 
             // Ticket strip: top-left, left→right in spawn order.
             RectTransform strip = Rect("TicketStrip", safe);
-            Place(strip, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(18f, -10f), new Vector2(1300f, 196f));
+            // Wide enough for five tickets at full size; a rush wave shrinks the strip to fit (OrderTicketHud).
+            Place(strip, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(18f, -10f), new Vector2(1590f, 196f));
             var row = strip.gameObject.AddComponent<HorizontalLayoutGroup>();
             row.spacing = 14f;
             row.childAlignment = TextAnchor.UpperLeft;
@@ -749,6 +950,29 @@ namespace SliceNServe.EditorTools
             var reputation = status.gameObject.AddComponent<ReputationReadout>();
             SetArray(reputation, "hearts", hearts);
 
+            // Mid-run shop, under the status panel: the run freezes while it is open.
+            Button hudUpgrades = PixelButton("Upgrades", safe, FppSprite(FppUiSheet, "UI_91"), pixelFont, 30f, Color.white,
+                                             new Vector2(1f, 1f), new Vector2(-18f, -162f), new Vector2(270f, 84f), gameAudio, out TextMeshProUGUI upgradesLabel);
+            upgradesLabel.SetText("Upgrades");
+            upgradesLabel.rectTransform.offsetMin = new Vector2(64f, 0f);
+            upgradesLabel.rectTransform.offsetMax = new Vector2(-14f, 4f);
+            Image shopIcon = Img("Icon", hudUpgrades.transform, FppIcon("Shop"), Color.white);
+            Place(shopIcon.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(22f, 2f), new Vector2(46f, 46f), new Vector2(0f, 0.5f));
+
+            // Run events (rush hour, bigger orders), centred under the ticket strip.
+            RectTransform bannerRt = Rect("Banner", safe);
+            Place(bannerRt, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -222f), new Vector2(1120f, 72f), new Vector2(0.5f, 1f));
+            var bannerGroup = bannerRt.gameObject.AddComponent<CanvasGroup>();
+            bannerGroup.blocksRaycasts = false;
+            bannerGroup.alpha = 0f;
+            Image bannerBg = bannerRt.gameObject.AddComponent<Image>();
+            Panel(bannerBg, new Color(0.78f, 0.16f, 0.12f, 0.92f));
+            bannerBg.raycastTarget = false;
+            TextMeshProUGUI bannerText = Text("Label", bannerRt, pixelFont, 32f, Color.white, TextAlignmentOptions.Center, bold: false);
+            Stretch(bannerText.rectTransform);
+            var banner = bannerRt.gameObject.AddComponent<HudBanner>();
+            SetRefs(banner, ("group", bannerGroup), ("background", bannerBg), ("label", bannerText));
+
             // First-run hint in the launch corridor, bottom-left.
             RectTransform hintRt = Rect("Hint", safe);
             Place(hintRt, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(28f, 18f), new Vector2(760f, 70f), new Vector2(0f, 0f));
@@ -768,17 +992,210 @@ namespace SliceNServe.EditorTools
                 ("container", strip), ("ticketPrefab", ticketPrefab), ("cash", cash), ("reputation", reputation),
                 ("hint", hint), ("boardCamera", cam), ("effectsRoot", effects), ("font", font));
 
-            RunOverlay overlay = BuildOverlay(canvasGo.transform, font, gameAudio);
-            ShopPanel shop = BuildShop(canvasGo.transform, cardPrefab, font, gameAudio);
+            // Sibling order is draw order: the shop and settings open on top of the menu and cards.
+            RunOverlay overlay = BuildOverlay(canvasGo.transform, font, pixelFont, gameAudio);
+            MainMenu mainMenu = BuildMainMenu(canvasGo.transform, font, pixelFont, gameAudio);
+            ShopPanel shop = BuildShop(canvasGo.transform, cardPrefab, font, pixelFont, gameAudio);
+            SettingsPanel settings = BuildSettings(canvasGo.transform, font, pixelFont, gameAudio);
 
             var eventSystem = new GameObject("EventSystem");
             eventSystem.AddComponent<UnityEngine.EventSystems.EventSystem>();
             eventSystem.AddComponent<InputSystemUIInputModule>();
 
-            return (hud, overlay, shop);
+            return new Menus { Hud = hud, Overlay = overlay, Shop = shop, MainMenu = mainMenu, Settings = settings, HudUpgrades = hudUpgrades, Banner = banner };
         }
 
-        private static RunOverlay BuildOverlay(Transform canvas, TMP_FontAsset font, GameAudio gameAudio)
+        // ---------------------------------------------------------------- main menu & settings
+
+        private static readonly Color Cream = new Color(1f, 0.93f, 0.76f);
+        private static readonly Color Cocoa = new Color(0.36f, 0.22f, 0.18f);
+
+        private static MainMenu BuildMainMenu(Transform canvas, TMP_FontAsset font, TMP_FontAsset pixelFont, GameAudio gameAudio)
+        {
+            // The live board shows through the dim: the menu sits in the kitchen it opens.
+            RectTransform root = Rect("MainMenu", canvas);
+            Stretch(root);
+            Image dim = root.gameObject.AddComponent<Image>();
+            dim.color = new Color(0.06f, 0.04f, 0.04f, 0.62f);
+            var group = root.gameObject.AddComponent<CanvasGroup>();
+
+            // Logo: the name between a pan and a spatula, bobbing above the menu card.
+            RectTransform logo = Rect("Logo", root);
+            Place(logo, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 345f), new Vector2(1300f, 220f), new Vector2(0.5f, 0.5f));
+            TextMeshProUGUI title = Text("Title", logo, pixelFont, 150f, Cream, TextAlignmentOptions.Center, bold: false);
+            Stretch(title.rectTransform);
+            title.SetText("Slice & Serve");
+            title.outlineWidth = 0.22f;
+            title.outlineColor = new Color32(70, 30, 24, 255);
+            Image pan = Img("Pan", logo, FppIcon("KN004"), Color.white);
+            Place(pan.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(0f, 10f), new Vector2(150f, 150f), new Vector2(0.5f, 0.5f));
+            pan.rectTransform.localEulerAngles = new Vector3(0f, 0f, 20f);
+            Image spatula = Img("Spatula", logo, FppIcon("KN005"), Color.white);
+            Place(spatula.rectTransform, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(0f, 10f), new Vector2(150f, 150f), new Vector2(0.5f, 0.5f));
+            spatula.rectTransform.localEulerAngles = new Vector3(0f, 0f, -20f);
+            spatula.rectTransform.localScale = new Vector3(-1f, 1f, 1f);   // mirrored, so the pair frames the name
+
+            TextMeshProUGUI tagline = Text("Tagline", root, pixelFont, 40f, new Color(1f, 0.82f, 0.55f), TextAlignmentOptions.Center, bold: false);
+            Place(tagline.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 232f), new Vector2(1200f, 60f), new Vector2(0.5f, 0.5f));
+            tagline.SetText("Bounce the knife. Feed the rush.");
+
+            // The menu card: Food-Ping-Pong's framed paper, with the three choices stacked.
+            RectTransform card = Rect("Card", root);
+            Place(card, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -150f), new Vector2(620f, 680f), new Vector2(0.5f, 0.5f));
+            PixelPanel(card.gameObject.AddComponent<Image>(), FppSprite(FppBooksSheet, "UI books & more_18"));
+
+            Button play = PixelButton("Play", card, FppSprite(FppUiSheet, "UI_91"), pixelFont, 72f, Color.white,
+                                      new Vector2(0.5f, 1f), new Vector2(0f, -60f), new Vector2(460f, 130f), gameAudio, out TextMeshProUGUI playLabel);
+            playLabel.SetText("Play");
+            Button upgrade = MenuButton("Upgrade", card, pixelFont, "Shop", new Vector2(0f, -210f), gameAudio);
+            Button settings = MenuButton("Settings", card, pixelFont, "Settings", new Vector2(0f, -322f), gameAudio);
+
+            // Exit, last and quieter: smaller, with a red label, so it is never mistaken for Play.
+            Button exit = MenuButton("Exit", card, pixelFont, "X", new Vector2(0f, -434f), gameAudio);
+            var exitRt = (RectTransform)exit.transform;
+            exitRt.sizeDelta = new Vector2(360f, 86f);
+            exit.GetComponentInChildren<TextMeshProUGUI>().color = new Color(0.72f, 0.2f, 0.15f);
+            exit.transform.Find("Icon").GetComponent<Image>().color = new Color(0.72f, 0.2f, 0.15f);
+
+            // A badge on Upgrade when something in the shop is affordable: the nudge to spend.
+            Image badge = Img("Badge", upgrade.transform, Placeholder("circle"), new Color(0.86f, 0.2f, 0.16f));
+            Place(badge.rectTransform, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(10f, 10f), new Vector2(46f, 46f), new Vector2(0.5f, 0.5f));
+            badge.preserveAspect = false;
+            TextMeshProUGUI bang = Text("Mark", badge.transform, pixelFont, 36f, Color.white, TextAlignmentOptions.Center, bold: false);
+            Stretch(bang.rectTransform);
+            bang.SetText("!");
+
+            // The till and the best run, along the bottom of the card.
+            RectTransform till = Rect("Till", card);
+            Place(till, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(-110f, 36f), new Vector2(240f, 60f), new Vector2(0.5f, 0f));
+            Image coin = Img("Coin", till, Placeholder("coin"), Color.white);
+            Place(coin.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(0f, 0f), new Vector2(46f, 46f), new Vector2(0f, 0.5f));
+            TextMeshProUGUI cash = Text("Cash", till, pixelFont, 44f, new Color(0.62f, 0.38f, 0.08f), TextAlignmentOptions.Left, bold: false);
+            Stretch(cash.rectTransform);
+            cash.rectTransform.offsetMin = new Vector2(58f, 0f);
+            TextMeshProUGUI best = Text("Best", card, pixelFont, 30f, Cocoa, TextAlignmentOptions.Right, bold: false);
+            Place(best.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(110f, 36f), new Vector2(260f, 60f), new Vector2(0.5f, 0f));
+
+            var menu = root.gameObject.AddComponent<MainMenu>();
+            SetRefs(menu, ("group", group), ("logo", logo), ("play", play), ("upgrade", upgrade), ("settings", settings), ("exit", exit),
+                    ("till", cash), ("best", best), ("upgradeBadge", badge.gameObject));
+            return menu;
+        }
+
+        /// <summary>A secondary menu choice: cream pill, dark label, icon on the left.</summary>
+        private static Button MenuButton(string name, RectTransform card, TMP_FontAsset pixelFont, string icon, Vector2 position, GameAudio gameAudio)
+        {
+            Button button = PixelButton(name, card, FppSprite(FppBooksSheet, "UI books & more_240"), pixelFont, 52f, Cocoa,
+                                        new Vector2(0.5f, 1f), position, new Vector2(460f, 100f), gameAudio, out TextMeshProUGUI label);
+            label.SetText(name);
+            label.rectTransform.offsetMin = new Vector2(60f, 0f);
+            Image img = Img("Icon", button.transform, FppIcon(icon), Cocoa);
+            Place(img.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(34f, 0f), new Vector2(56f, 56f), new Vector2(0f, 0.5f));
+            return button;
+        }
+
+        private static SettingsPanel BuildSettings(Transform canvas, TMP_FontAsset font, TMP_FontAsset pixelFont, GameAudio gameAudio)
+        {
+            RectTransform root = Rect("Settings", canvas);
+            Stretch(root);
+            Image dim = root.gameObject.AddComponent<Image>();
+            dim.color = new Color(0.05f, 0.03f, 0.03f, 0.8f);
+            var group = root.gameObject.AddComponent<CanvasGroup>();
+
+            RectTransform card = Rect("Card", root);
+            Place(card, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(860f, 640f), new Vector2(0.5f, 0.5f));
+            PixelPanel(card.gameObject.AddComponent<Image>(), FppSprite(FppBooksSheet, "UI books & more_18"));
+
+            TextMeshProUGUI title = Text("Title", card, pixelFont, 80f, new Color(0.75f, 0.22f, 0.15f), TextAlignmentOptions.Center, bold: false);
+            Place(title.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, -40f), new Vector2(-80f, 100f), new Vector2(0.5f, 1f));
+            title.SetText("Settings");
+
+            Slider music = SettingsSlider("Music", card, pixelFont, "Music", -180f);
+            Slider sfx = SettingsSlider("Sound", card, pixelFont, "Sound", -290f);
+
+            // Fullscreen: PC only; the panel hides the row on phones.
+            RectTransform row = SettingsRow("Fullscreen", card, pixelFont, "Settings", -400f);
+            RectTransform box = Rect("Toggle", row);
+            Place(box, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-30f, 0f), new Vector2(76f, 76f), new Vector2(1f, 0.5f));
+            Image boxBg = box.gameObject.AddComponent<Image>();
+            PixelPanel(boxBg, FppSprite(FppBooksSheet, "UI books & more_240"));
+            Image check = Img("Check", box, Placeholder("check"), Color.white);
+            Stretch(check.rectTransform, 10f);
+            var toggle = box.gameObject.AddComponent<Toggle>();
+            toggle.targetGraphic = boxBg;
+            toggle.graphic = check;
+            UnityEditor.Events.UnityEventTools.AddPersistentListener(toggle.onValueChanged, gameAudio.PlayToggle);
+
+            Button back = PixelButton("Back", card, FppSprite(FppUiSheet, "UI_91"), pixelFont, 52f, Color.white,
+                                      new Vector2(0.5f, 0f), new Vector2(0f, 46f), new Vector2(360f, 100f), gameAudio, out TextMeshProUGUI backLabel);
+            backLabel.SetText("Back");
+
+            var panel = root.gameObject.AddComponent<SettingsPanel>();
+            SetRefs(panel, ("group", group), ("music", music), ("sfx", sfx), ("fullscreen", toggle),
+                    ("fullscreenRow", row.gameObject), ("back", back));
+            root.gameObject.SetActive(false);
+            return panel;
+        }
+
+        /// <summary>One settings line: an icon and a label on the left, the control on the right.</summary>
+        private static RectTransform SettingsRow(string name, RectTransform card, TMP_FontAsset pixelFont, string icon, float y)
+        {
+            RectTransform row = Rect(name + "Row", card);
+            Place(row, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, y), new Vector2(-120f, 90f), new Vector2(0.5f, 0.5f));
+            Image img = Img("Icon", row, FppIcon(icon), Cocoa);
+            Place(img.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), Vector2.zero, new Vector2(60f, 60f), new Vector2(0f, 0.5f));
+            TextMeshProUGUI label = Text("Label", row, pixelFont, 46f, Cocoa, TextAlignmentOptions.Left, bold: false);
+            Place(label.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(80f, 0f), new Vector2(280f, 70f), new Vector2(0f, 0.5f));
+            label.SetText(name);
+            return row;
+        }
+
+        private static Slider SettingsSlider(string name, RectTransform card, TMP_FontAsset pixelFont, string icon, float y)
+        {
+            RectTransform row = SettingsRow(name, card, pixelFont, icon, y);
+
+            RectTransform rt = Rect("Slider", row);
+            Place(rt, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-30f, 0f), new Vector2(360f, 44f), new Vector2(1f, 0.5f));
+            Image track = rt.gameObject.AddComponent<Image>();
+            PixelPanel(track, FppSprite(FppBooksSheet, "UI books & more_240"));
+            track.color = new Color(0.78f, 0.66f, 0.55f);
+
+            RectTransform fillArea = Rect("Fill Area", rt);
+            Stretch(fillArea, 8f);
+            Image fill = Img("Fill", fillArea, Placeholder("panel"), Accent);
+            fill.type = Image.Type.Sliced;
+            fill.preserveAspect = false;
+            fill.rectTransform.anchorMin = Vector2.zero;
+            fill.rectTransform.anchorMax = new Vector2(0.5f, 1f);
+            fill.rectTransform.offsetMin = fill.rectTransform.offsetMax = Vector2.zero;
+
+            RectTransform handleArea = Rect("Handle Slide Area", rt);
+            Stretch(handleArea);
+            handleArea.offsetMin = new Vector2(20f, 0f);
+            handleArea.offsetMax = new Vector2(-20f, 0f);
+            // The handle: a cocoa ring with a cream centre (a child draws over its parent).
+            Image handle = Img("Handle", handleArea, Placeholder("circle"), Cocoa);
+            handle.raycastTarget = true;
+            handle.rectTransform.anchorMin = new Vector2(0.5f, 0f);
+            handle.rectTransform.anchorMax = new Vector2(0.5f, 1f);
+            handle.rectTransform.offsetMin = new Vector2(-30f, -10f);
+            handle.rectTransform.offsetMax = new Vector2(30f, 10f);
+            Image centre = Img("Centre", handle.transform, Placeholder("circle"), Cream);
+            Stretch(centre.rectTransform, 7f);
+
+            var slider = rt.gameObject.AddComponent<Slider>();
+            slider.fillRect = fill.rectTransform;
+            slider.handleRect = handle.rectTransform;
+            slider.targetGraphic = handle;
+            slider.direction = Slider.Direction.LeftToRight;
+            slider.minValue = 0f;
+            slider.maxValue = 1f;
+            slider.value = 0.5f;
+            slider.navigation = new Navigation { mode = Navigation.Mode.None };
+            return slider;
+        }
+
+        private static RunOverlay BuildOverlay(Transform canvas, TMP_FontAsset font, TMP_FontAsset pixelFont, GameAudio gameAudio)
         {
             // The dim covers the whole screen; the card sits centred, well inside any safe area.
             RectTransform root = Rect("Overlay", canvas);
@@ -791,7 +1208,7 @@ namespace SliceNServe.EditorTools
             Place(card, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(980f, 640f), new Vector2(0.5f, 0.5f));
             Panel(card.gameObject.AddComponent<Image>(), Paper);
 
-            TextMeshProUGUI title = Text("Title", card, font, 84f, new Color(0.75f, 0.22f, 0.15f), TextAlignmentOptions.Center, bold: true);
+            TextMeshProUGUI title = Text("Title", card, pixelFont, 84f, new Color(0.75f, 0.22f, 0.15f), TextAlignmentOptions.Center, bold: false);
             Place(title.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, -36f), new Vector2(-60f, 110f), new Vector2(0.5f, 1f));
 
             TextMeshProUGUI body = Text("Body", card, font, 32f, Ink, TextAlignmentOptions.Center, bold: false);
@@ -811,7 +1228,7 @@ namespace SliceNServe.EditorTools
             return overlay;
         }
 
-        private static ShopPanel BuildShop(Transform canvas, ShopCard cardPrefab, TMP_FontAsset font, GameAudio gameAudio)
+        private static ShopPanel BuildShop(Transform canvas, ShopCard cardPrefab, TMP_FontAsset font, TMP_FontAsset pixelFont, GameAudio gameAudio)
         {
             RectTransform root = Rect("Shop", canvas);
             Stretch(root);
@@ -823,7 +1240,7 @@ namespace SliceNServe.EditorTools
             Place(card, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1480f, 900f), new Vector2(0.5f, 0.5f));
             Panel(card.gameObject.AddComponent<Image>(), Paper);
 
-            TextMeshProUGUI title = Text("Title", card, font, 68f, new Color(0.75f, 0.22f, 0.15f), TextAlignmentOptions.Left, bold: true);
+            TextMeshProUGUI title = Text("Title", card, pixelFont, 68f, new Color(0.75f, 0.22f, 0.15f), TextAlignmentOptions.Left, bold: false);
             Place(title.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(48f, -28f), new Vector2(-96f, 90f));
             title.SetText("Kitchen Upgrades");
 
@@ -853,6 +1270,38 @@ namespace SliceNServe.EditorTools
             SetRefs(shop, ("group", group), ("grid", grid), ("cardPrefab", cardPrefab), ("cash", cash), ("back", back));
             root.gameObject.SetActive(false);
             return shop;
+        }
+
+        /// <summary>A Food-Ping-Pong pixel button: a 9-sliced sheet sprite drawn at 4× pixel scale.</summary>
+        private static Button PixelButton(string name, Transform parent, Sprite sprite, TMP_FontAsset font, float fontSize, Color textColor,
+                                          Vector2 anchor, Vector2 position, Vector2 size, GameAudio gameAudio, out TextMeshProUGUI label)
+        {
+            RectTransform rt = Rect(name, parent);
+            Place(rt, anchor, anchor, position, size);
+            Image bg = rt.gameObject.AddComponent<Image>();
+            PixelPanel(bg, sprite);
+            var button = rt.gameObject.AddComponent<Button>();
+            button.targetGraphic = bg;
+            ColorBlock colors = button.colors;
+            colors.highlightedColor = new Color(1f, 0.9f, 0.8f);
+            colors.pressedColor = new Color(0.75f, 0.65f, 0.6f);
+            colors.selectedColor = Color.white;
+            button.colors = colors;
+            UnityEditor.Events.UnityEventTools.AddPersistentListener(button.onClick, gameAudio.PlayClick);
+
+            label = Text("Label", rt, font, fontSize, textColor, TextAlignmentOptions.Center, bold: false);
+            Stretch(label.rectTransform);
+            label.rectTransform.offsetMax = new Vector2(0f, 4f);   // the pill's shadow is at the bottom
+            return button;
+        }
+
+        /// <summary>Sheet sprites are 64 PPU; 0.39 draws each source pixel as ~4 canvas units at 1080p.</summary>
+        private static void PixelPanel(Image image, Sprite sprite)
+        {
+            image.sprite = sprite;
+            image.type = Image.Type.Sliced;
+            image.pixelsPerUnitMultiplier = 100f / (64f * 4f);
+            image.color = Color.white;
         }
 
         private static Button MakeButton(string name, RectTransform parent, TMP_FontAsset font, float fontSize, Color color,
@@ -908,6 +1357,109 @@ namespace SliceNServe.EditorTools
 
         private static Sprite MartSprite(string name)
             => AssetDatabase.LoadAllAssetsAtPath($"{ArtMart}/{name}.png").OfType<Sprite>().FirstOrDefault();
+
+        private static Sprite FppSprite(string sheet, string name)
+        {
+            Sprite sprite = AssetDatabase.LoadAllAssetsAtPath(sheet).OfType<Sprite>().FirstOrDefault(s => s.name == name);
+            if (sprite == null) Debug.LogError($"[Setup] Missing sprite {name} in {sheet}.");
+            return sprite;
+        }
+
+        private static Sprite FppIcon(string name)
+            => AssetDatabase.LoadAllAssetsAtPath($"{ArtFpp}/Icons/{name}.png").OfType<Sprite>().FirstOrDefault();
+
+        /// <summary>Food-Ping-Pong's ScoreDozer pixel font, for menus and headings; falls back to the body font.</summary>
+        private static TMP_FontAsset PixelFont(TMP_FontAsset fallback)
+        {
+            var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FppFontPath);
+            if (font == null) { Debug.LogWarning("[Setup] ScoreDozer font missing; menus use the body font."); return fallback; }
+
+            // ScoreDozer is ASCII only: anything else (×, —) falls through to the body font.
+            if (fallback != null && !font.fallbackFontAssetTable.Contains(fallback))
+            {
+                font.fallbackFontAssetTable.Add(fallback);
+                EditorUtility.SetDirty(font);
+            }
+            return font;
+        }
+
+        // Slime's Pixel Font Pack (pleeze.itch.io/slimesfonts, CC0), wherever it was unzipped under
+        // Assets/Art. The first of these found wins: Sol Schori reads best at card sizes.
+        private static readonly string[] TooltipFontPreference = { "Sol Schori", "Counting Apples", "Varnished", "Breadcrumbs & Flakery", "Ant Party" };
+
+        private static string TooltipFontDir()
+            => AssetDatabase.GetSubFolders("Assets/Art")
+                .FirstOrDefault(f => Path.GetFileName(f).IndexOf("slime", System.StringComparison.OrdinalIgnoreCase) >= 0);
+
+        /// <summary>
+        /// The upgrade cards' text font, from the Slime pack's folder: a TextMeshPro font asset if
+        /// one is there, otherwise one generated from its .ttf (point-sampled raster, so it stays
+        /// crisp). Falls back to the body font.
+        /// </summary>
+        private static TMP_FontAsset TooltipFont(TMP_FontAsset fallback)
+        {
+            string dir = TooltipFontDir();
+            if (dir == null) return fallback;
+
+            string[] tmp = AssetDatabase.FindAssets("t:TMP_FontAsset", new[] { dir }).Select(AssetDatabase.GUIDToAssetPath).ToArray();
+            string[] ttf = AssetDatabase.FindAssets("t:Font", new[] { dir }).Select(AssetDatabase.GUIDToAssetPath)
+                .Where(p => p.EndsWith(".ttf", System.StringComparison.OrdinalIgnoreCase) || p.EndsWith(".otf", System.StringComparison.OrdinalIgnoreCase)).ToArray();
+
+            // An exact name first ("Sol Schori", not "Sol Schori Bold"), then any file containing it.
+            string Preferred(string[] paths)
+            {
+                foreach (string name in TooltipFontPreference)
+                {
+                    string Stem(string p) => Path.GetFileNameWithoutExtension(p).Replace(" SDF", "");
+                    string hit = paths.FirstOrDefault(p => Stem(p).Equals(name, System.StringComparison.OrdinalIgnoreCase))
+                              ?? paths.FirstOrDefault(p => Stem(p).IndexOf(name, System.StringComparison.OrdinalIgnoreCase) >= 0);
+                    if (hit != null) return hit;
+                }
+                return paths.OrderBy(p => p, System.StringComparer.Ordinal).FirstOrDefault();
+            }
+
+            TMP_FontAsset font = null;
+            string chosen = Preferred(tmp);
+            if (chosen != null) font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(chosen);
+            else if ((chosen = Preferred(ttf)) != null) font = GenerateFontAsset(chosen);
+
+            if (font == null) { Debug.LogWarning($"[Setup] No usable font in {dir}; upgrade cards use the body font."); return fallback; }
+
+            if (font.fallbackFontAssetTable == null) font.fallbackFontAssetTable = new System.Collections.Generic.List<TMP_FontAsset>();
+            if (fallback != null && !font.fallbackFontAssetTable.Contains(fallback))
+            {
+                font.fallbackFontAssetTable.Add(fallback);   // for anything the pixel font lacks (×, —)
+                EditorUtility.SetDirty(font);
+            }
+            Debug.Log($"[Setup] Upgrade card font: {chosen}");
+            return font;
+        }
+
+        private static TMP_FontAsset GenerateFontAsset(string ttfPath)
+        {
+            string assetPath = Path.ChangeExtension(ttfPath, null) + " SDF.asset";
+            var existing = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(assetPath);
+            if (existing != null) return existing;
+
+            var source = AssetDatabase.LoadAssetAtPath<UnityEngine.Font>(ttfPath);
+            if (source == null) return null;
+
+            // Hinted raster, not SDF: a pixel font wants hard edges. Dynamic, so any glyph used is added.
+            TMP_FontAsset font = TMP_FontAsset.CreateFontAsset(source, 32, 2, UnityEngine.TextCore.LowLevel.GlyphRenderMode.RASTER_HINTED,
+                                                               512, 512, AtlasPopulationMode.Dynamic);
+            if (font == null) return null;
+
+            font.name = Path.GetFileNameWithoutExtension(assetPath);
+            AssetDatabase.CreateAsset(font, assetPath);
+            font.atlasTextures[0].name = font.name + " Atlas";
+            font.atlasTextures[0].filterMode = FilterMode.Point;
+            AssetDatabase.AddObjectToAsset(font.atlasTextures[0], font);
+            font.material.name = font.name + " Material";
+            AssetDatabase.AddObjectToAsset(font.material, font);
+            font.TryAddCharacters(" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~");
+            AssetDatabase.SaveAssets();
+            return font;
+        }
 
         private static TMP_FontAsset Font()
         {

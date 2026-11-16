@@ -51,6 +51,7 @@ namespace SliceNServe.Core
         public int MaxActiveOrders => _config.maxActiveOrders;
         public float OrderSpawnInterval => _config.orderSpawnInterval;
         public float BasePatienceSeconds => _config.basePatienceSeconds;
+        public float MinPatienceSeconds => _config.minPatienceSeconds;
         public float PatienceUpgradeMultiplier => _config.patienceUpgradeMultiplier * PatienceMultiplier;
         public float PatienceHurryThreshold => _config.patienceHurryThreshold;
         public float PatienceCriticalThreshold => _config.patienceCriticalThreshold;

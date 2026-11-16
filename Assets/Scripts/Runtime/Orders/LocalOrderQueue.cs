@@ -23,6 +23,10 @@ namespace SliceNServe.Orders
         }
 
         public int ActiveCount => _orders.Count;
+
+        /// <summary>Rush hour: a slice goes only to the customer at the front of the line; if they
+        /// don't need it, it is wasted rather than passed down to the next customer.</summary>
+        public bool FrontOnly { get; set; }
         public OrderInstance this[int index] => _orders[index];
 
         public OrderInstance Find(int orderId)
@@ -57,6 +61,12 @@ namespace SliceNServe.Orders
         /// dishes finish first.</summary>
         private OrderInstance FindTarget(IngredientDefinition ingredient)
         {
+            if (FrontOnly)
+            {
+                OrderInstance front = Front();
+                return front != null && front.Needs(ingredient) ? front : null;
+            }
+
             OrderInstance best = null;
 
             for (int i = 0; i < _orders.Count; i++)
@@ -71,6 +81,18 @@ namespace SliceNServe.Orders
             }
 
             return best;
+        }
+
+        /// <summary>The oldest open order: the one being served during a rush.</summary>
+        public OrderInstance Front()
+        {
+            OrderInstance front = null;
+            for (int i = 0; i < _orders.Count; i++)
+            {
+                OrderInstance o = _orders[i];
+                if (!o.IsClosed && (front == null || o.SpawnTime < front.SpawnTime)) front = o;
+            }
+            return front;
         }
 
         private void Credit(OrderInstance order, IngredientDefinition ingredient, Vector2 position)
@@ -106,7 +128,7 @@ namespace SliceNServe.Orders
             order.State = PatienceState.Served;
             _orders.Remove(order);
 
-            int cash = Mathf.RoundToInt(order.Dish.BaseCash * order.Customer.TipMultiplier * _tuning.TotalCashMultiplier);
+            int cash = Mathf.RoundToInt(order.Dish.BaseCash * order.Customer.TipMultiplier * order.RewardScale * _tuning.TotalCashMultiplier);
             _events.Publish(new OrderServed(order.OrderId, cash));
         }
     }
