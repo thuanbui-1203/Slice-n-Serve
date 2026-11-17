@@ -35,7 +35,7 @@ namespace SliceNServe.Tests
         }
 
         [Test]
-        public void AutoThrow_AlwaysAimsIntoTheBoard_NeverAlongAWall()
+        public void AutoThrow_AimsAnyWay_ButNeverAlongAWall()
         {
             var random = new GameRandom(3);
             float sinWall = Mathf.Sin(KnifeLauncher.MinWallAngleDegrees * Mathf.Deg2Rad) - 1e-4f;
@@ -43,7 +43,6 @@ namespace SliceNServe.Tests
             {
                 Vector2 d = AutoThrower.RandomDirection(random);
                 Assert.That(d.magnitude, Is.EqualTo(1f).Within(1e-4f));
-                Assert.That(d.y, Is.GreaterThan(0f), "upward, away from the launcher's wall");
                 Assert.That(Mathf.Abs(d.x), Is.GreaterThanOrEqualTo(sinWall));
                 Assert.That(Mathf.Abs(d.y), Is.GreaterThanOrEqualTo(sinWall));
             }

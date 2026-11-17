@@ -124,6 +124,15 @@ namespace SliceNServe.Data
         [Tooltip("§1 budget: the frame-rate ceiling on live ingredients, whatever the density upgrade says.")]
         [Min(1)] public int ingredientCeiling = 120;
 
+        [Header("After the last bounce")]
+        [Tooltip("Once a knife has used its last bounce it brakes this hard (linear damping) and glides to a stop. "
+               + "Where the player's knife stops is where the next throw starts.")]
+        [Min(0f)] public float lastBounceDamping = 4f;
+        [Tooltip("A braking knife ends when slower than this (the usual end speed is minLiveSpeed).")]
+        [Min(0.01f)] public float stopSpeed = 0.6f;
+        [Tooltip("The next throw starts at least this far from every wall, wherever the knife stopped.")]
+        [Min(0.3f)] public float launchWallClearance = 1.0f;
+
         [Header("Dice and auto-throw")]
         [Tooltip("After the die lands, the auto-throw waits this long before throwing, so the roll reads.")]
         [Min(0f)] public float autoThrowPause = 0.35f;

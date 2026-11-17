@@ -25,6 +25,7 @@ namespace SliceNServe.Board
         private int _liveCount;
         private bool _initialized;
         private GameRandom _random;
+        private Rect _playArea;
 
         /// <summary>True when a knife is idle at the launcher: Section 2 allows one live manual
         /// knife. Helper knives (§3) never block the player.</summary>
@@ -42,6 +43,10 @@ namespace SliceNServe.Board
         /// <summary>The player's knife (manual or auto-thrown), or null.</summary>
         public KnifeController PlayerKnife => _manualKnife;
 
+        /// <summary>Where the next throw starts: where the player's last knife came to rest (kept
+        /// clear of the walls), or the launcher at the start of a run.</summary>
+        public Vector2 LaunchPoint { get; private set; }
+
         /// <summary>Whose board (§5). Set before <see cref="Initialize"/>; knife ids are offset by it,
         /// so two players' knives never share an id.</summary>
         public int PlayerId { get; set; }
@@ -53,6 +58,8 @@ namespace SliceNServe.Board
         {
             _tuning = tuning;
             _random = random ?? new GameRandom();
+            _playArea = bounds.PlayArea;
+            LaunchPoint = tuning.LauncherPosition;
             _nextId = 1 + PlayerId * 1000000;
             if (BounceBudget == int.MaxValue) BounceBudget = tuning.MaxKnifeBounces;
 
@@ -75,7 +82,7 @@ namespace SliceNServe.Board
         /// <summary>Takes a velocity, not a drag, so §3's Sous-Chef helpers can call it with a
         /// computed aim vector and <see cref="LaunchSource.Helper"/> and no input at all.</summary>
         public KnifeController Launch(Vector2 velocity, LaunchSource source)
-            => Launch(_tuning.LauncherPosition, velocity, source);
+            => Launch(LaunchPoint, velocity, source);
 
         /// <summary>Launches from an arbitrary point — a split knife starts where its parent is.</summary>
         public KnifeController Launch(Vector2 position, Vector2 velocity, LaunchSource source)
@@ -138,6 +145,20 @@ namespace SliceNServe.Board
             _pendingSplitCount = 0;
         }
 
+        /// <summary>The point inside the play area, at least the configured clearance from every wall.</summary>
+        public Vector2 ClearOfWalls(Vector2 p)
+        {
+            // Never under the HUD either: no further right or up than ingredients ever appear
+            // (the zone already keeps clear of the top-right buttons and the top band).
+            float c = _tuning.Config.launchWallClearance;
+            Rect zone = _tuning.IngredientZone;
+            return new Vector2(Mathf.Clamp(p.x, _playArea.xMin + c, Mathf.Min(_playArea.xMax - c, zone.xMax)),
+                               Mathf.Clamp(p.y, _playArea.yMin + c, Mathf.Min(_playArea.yMax - c, zone.yMax)));
+        }
+
+        /// <summary>Back to the launcher (a new run, or a round reset).</summary>
+        public void ResetLaunchPoint() => LaunchPoint = _tuning.LauncherPosition;
+
         private static Vector2 Rotate(Vector2 v, float degrees)
         {
             float r = degrees * Mathf.Deg2Rad, s = Mathf.Sin(r), c = Mathf.Cos(r);
@@ -147,6 +168,9 @@ namespace SliceNServe.Board
         private void OnKnifeExpired(KnifeController k)
         {
             if (!k.IsLive) return;   // already recalled with the player's knife this step
+
+            // The player's knife rests where it stopped: the next throw starts there.
+            if (k == _manualKnife) LaunchPoint = ClearOfWalls(k.Body.position);
 
             k.ReturnToPool();
             _liveCount--;

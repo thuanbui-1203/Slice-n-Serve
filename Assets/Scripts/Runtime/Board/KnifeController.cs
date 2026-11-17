@@ -25,6 +25,7 @@ namespace SliceNServe.Board
         private float _age;
         private bool _live;
         private bool _spent;
+        private bool _braking;
 
         public bool IsLive => _live;
         public int KnifeId => _knifeId;
@@ -36,6 +37,9 @@ namespace SliceNServe.Board
 
         /// <summary>Bounces left before the next border hit ends the knife.</summary>
         public int BouncesLeft => Mathf.Max(0, BounceBudget - _bounceCount);
+
+        /// <summary>Its last bounce is used: it is braking to a stop.</summary>
+        public bool IsBraking => _braking;
 
         /// <summary>Ingredients sliced since launch — the combo counter, reset per launch.</summary>
         public int SliceCount => _sliceCount;
@@ -83,6 +87,9 @@ namespace SliceNServe.Board
             _knifeId = knifeId;
             BounceBudget = Mathf.Max(0, bounceBudget);
             _spent = false;
+            _braking = false;
+            body.linearDamping = 0f;
+            body.angularDamping = 0.4f;
             FromHelper = fromHelper || source == LaunchSource.Helper;
             _bounceCount = 0;
             _sliceCount = 0;
@@ -131,7 +138,8 @@ namespace SliceNServe.Board
 
         private void CheckEnd()
         {
-            float minSq = _tuning.MinLiveSpeed * _tuning.MinLiveSpeed;
+            float endSpeed = _braking ? _tuning.Config.stopSpeed : _tuning.MinLiveSpeed;
+            float minSq = endSpeed * endSpeed;
             bool tooSlow = body.linearVelocity.sqrMagnitude < minSq;
             bool tooOld = _age > _tuning.MaxKnifeLifetime;
             bool tooBouncy = _bounceCount > _tuning.MaxKnifeBounces;
@@ -152,8 +160,8 @@ namespace SliceNServe.Board
             _bounceCount++;
             _events.Publish(new KnifeBounced(_knifeId, _bounceCount, contact.point, BounceBudget - _bounceCount, PlayerId));
 
-            // Out of bounces: the knife sticks where it hit and is collected next step (never
-            // returned to the pool from inside a contact callback).
+            // Braking, and it reached a wall anyway: it stops right there, collected next step
+            // (never returned to the pool from inside a contact callback).
             if (_bounceCount > BounceBudget)
             {
                 _spent = true;
@@ -177,6 +185,14 @@ namespace SliceNServe.Board
                 v = (v.normalized + n * 0.12f).normalized * v.magnitude;
 
             body.linearVelocity = v;
+
+            // That was the last bounce the die allowed: brake hard and glide to a stop.
+            if (_bounceCount == BounceBudget)
+            {
+                _braking = true;
+                body.linearDamping = _tuning.Config.lastBounceDamping;
+                body.angularDamping = _tuning.Config.lastBounceDamping;
+            }
             Bounced?.Invoke(this);
         }
     }

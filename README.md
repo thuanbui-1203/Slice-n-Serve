@@ -87,8 +87,9 @@ frames per PNG, facing right, optional `<name>_idle.png`) into `Assets/Art/Custo
 Build Everything to use it instead.
 
 **The die and auto-throw.** Every throw starts with a die roll (the die beside the launcher):
-the knife may bounce off the border that many times (1–6), and the next border hit ends it. Knives
-no longer lose speed on a bounce (`bounceRetention` = 1). Split knives keep what their parent has
+the knife may bounce off the border that many times (1–6) at full speed (`bounceRetention` = 1);
+after its last bounce it brakes hard and glides to a stop, and the next throw starts where it
+stopped (kept clear of the walls and the HUD; `BoardConfig` → After the last bounce). Split knives keep what their parent has
 left; sous-chef knives get the player's roll. Once Knife Speed and Split Chance are both maxed,
 **auto-throw** unlocks (HUD switch, remembered in PlayerPrefs): whenever the knife is idle the die
 rolls and the knife throws itself in a random upward direction at full speed, and tapping the board
@@ -118,7 +119,7 @@ Details and the open decisions: `docs/plans/section-5-pvp.md`.
   Test Runner. `AspectSnapshots` is explicit: it renders the scene at 16:9, 16:10, 20:9, 4:3 and 32:9
   to PNGs for review.
 - **Art:** ingredients come from `Assets/Art/Pixel_Mart`; the knife, tiles, UI and customer faces are
-  generated placeholders in `Assets/Art/Placeholders`. Sound is synthesised at runtime.
+  generated placeholders in `Assets/Art/Placeholders`. Sound is synthesised at runtime, and every play varies (random take, pitch, volume, pan — `GameAudio`).
 
 | | |
 | --- | --- |

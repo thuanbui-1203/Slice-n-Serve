@@ -79,24 +79,63 @@ namespace SliceNServe.Tests
         }
 
         [UnityTest]
-        public IEnumerator Knife_EndsOnTheBorderHitAfterItsLastBounce_AtFullSpeed()
+        public IEnumerator Knife_BrakesAfterItsLastBounce_AndTheNextThrowStartsWhereItStopped()
         {
             _knives.BounceBudget = 2;
             Time.timeScale = 5f;
             const float v0 = 15f;
+            Vector2 launcher = _knives.LaunchPoint;
             KnifeController knife = _knives.Launch(new Vector2(0.45f, 1f).normalized * v0, LaunchSource.Manual);
             Assert.That(knife.BounceBudget, Is.EqualTo(2));
 
-            float minSpeed = float.MaxValue;
-            for (int i = 0; i < 600 && knife.IsLive; i++)
+            float minBefore = float.MaxValue;
+            bool braked = false;
+            Vector2 last = knife.Body.position;
+            for (int i = 0; i < 900 && knife.IsLive; i++)
             {
                 yield return new WaitForFixedUpdate();
-                if (knife.IsLive && knife.BounceCount <= 2) minSpeed = Mathf.Min(minSpeed, knife.Body.linearVelocity.magnitude);
+                if (!knife.IsLive) break;
+                last = knife.Body.position;
+                if (!knife.IsBraking) minBefore = Mathf.Min(minBefore, knife.Body.linearVelocity.magnitude);
+                else braked = true;
             }
 
-            Assert.That(knife.IsLive, Is.False, "the knife ends");
-            Assert.That(knife.BounceCount, Is.EqualTo(3), "two bounces, then the third border hit ends it");
-            Assert.That(minSpeed, Is.EqualTo(v0).Within(v0 * 0.03f), "no friction: full speed between bounces");
+            Assert.That(knife.IsLive, Is.False, "the knife comes to rest");
+            Assert.That(braked, Is.True, "it braked after its last bounce");
+            Assert.That(knife.BounceCount, Is.InRange(2, 3), "two bounces, then it stops (on a third wall at most)");
+            Assert.That(minBefore, Is.EqualTo(v0).Within(v0 * 0.03f), "no friction until the last bounce");
+
+            Vector2 next = _knives.LaunchPoint;
+            Assert.That(next, Is.Not.EqualTo(launcher), "the next throw starts where it stopped");
+            Assert.That(Vector2.Distance(next, _knives.ClearOfWalls(last)), Is.LessThan(0.6f));
+            Rect play = _services.Tuning.Config.worldBounds;
+            float c = _services.Tuning.Config.launchWallClearance - 1e-3f;
+            Assert.That(next.x >= play.xMin + c && next.x <= play.xMax - c && next.y >= play.yMin + c && next.y <= play.yMax - c,
+                        Is.True, "kept clear of the walls");
+
+            // And the next knife really leaves from there.
+            KnifeController again = _knives.Launch(Vector2.up * 5f, LaunchSource.Manual);
+            Assert.That(Vector2.Distance(again.Body.position, next), Is.LessThan(0.01f));
+            _knives.ReturnAllKnives();
+        }
+
+        [Test]
+        public void Sounds_AreNeverPlayedTheSameWayTwice()
+        {
+            var audio = Object.FindAnyObjectByType<SliceNServe.UI.GameAudio>();
+            for (int i = 0; i < 8; i++)
+                _services.Events.Publish(new IngredientSliced(_ingredients.Definitions[0], Vector2.zero, 1, 0, 1));
+
+            var pitches = new System.Collections.Generic.HashSet<float>();
+            var pans = new System.Collections.Generic.HashSet<float>();
+            foreach (AudioSource s in audio.GetComponents<AudioSource>())
+            {
+                if (s.loop) continue;   // the music
+                pitches.Add(s.pitch);
+                pans.Add(s.panStereo);
+            }
+            Assert.That(pitches.Count, Is.GreaterThan(4), "each play gets its own pitch");
+            Assert.That(pans.Count, Is.GreaterThan(4), "and its own place left-right");
         }
 
         [UnityTest]
@@ -119,7 +158,7 @@ namespace SliceNServe.Tests
             yield return null;
 
             _services.Events.Unsubscribe(onRoll);
-            Assert.That(knife.BounceCount, Is.EqualTo(rolls[0] + 1));
+            Assert.That(knife.BounceCount, Is.InRange(rolls[0], rolls[0] + 1));
             Assert.That(rolls.Count, Is.EqualTo(2), "the knife landed: roll for the next one");
             Assert.That(_knives.BounceBudget, Is.EqualTo(rolls[1]));
         }

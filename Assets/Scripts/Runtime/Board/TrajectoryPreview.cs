@@ -67,6 +67,11 @@ namespace SliceNServe.Board
             if (_input == null) return;
 
             bool ready = _knives.CanLaunch;
+
+            // The knife waits wherever the last one stopped.
+            Vector2 launcher = _knives.LaunchPoint;
+            if (launcherKnife != null) launcherKnife.transform.position = launcher;
+            if (launcherBase != null) launcherBase.transform.position = launcher;
             Vector2 drag = _input.CurrentDragWorld;
             bool aiming = ready && _input.IsDragging && KnifeLauncher.IsValidDrag(drag, _tuning);
 
@@ -96,7 +101,7 @@ namespace SliceNServe.Board
         {
             // Corners of the reflected path: a circle cast of the knife's own radius, so the
             // preview bends where the knife's centre will, not where a ray would.
-            Vector2 p = _tuning.LauncherPosition;
+            Vector2 p = _knives.LaunchPoint;
             int cornerCount = 0;
             _corners[cornerCount++] = p;
 

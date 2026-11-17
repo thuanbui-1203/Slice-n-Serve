@@ -67,7 +67,7 @@ namespace SliceNServe.Board
 
         private void Throw()
         {
-            Vector2 from = _tuning.LauncherPosition;
+            Vector2 from = _knives.LaunchPoint;   // they throw from where the player's knife rests
             int target = PickTarget(_orders, _board.Live, from);
 
             Vector2 dir;
