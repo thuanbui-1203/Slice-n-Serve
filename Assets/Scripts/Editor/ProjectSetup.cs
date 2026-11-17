@@ -1643,8 +1643,8 @@ namespace SliceNServe.EditorTools
             body.lineSpacing = 8f;
 
             // Primary action centred; RunOverlay slides it left when the secondary one is shown.
-            Button button = MakeButton("Button", card, cardFont, 42f, Accent, new Vector2(0f, 48f), new Vector2(460f, 104f), gameAudio, out TextMeshProUGUI label);
-            Button secondary = MakeButton("Secondary", card, cardFont, 38f, new Color(0.45f, 0.32f, 0.26f), new Vector2(250f, 48f), new Vector2(300f, 104f), gameAudio, out TextMeshProUGUI secondaryLabel);
+            Button button = MakeButton("Button", card, cardFont, 42f, Accent, new Vector2(-270f, 48f), new Vector2(250f, 104f), gameAudio, out TextMeshProUGUI label);
+            Button secondary = MakeButton("Secondary", card, cardFont, 38f, new Color(0.45f, 0.32f, 0.26f), new Vector2(170f, 48f), new Vector2(520f, 104f), gameAudio, out TextMeshProUGUI secondaryLabel);
 
             // Longer labels ("Back to Main Menu") shrink to fit their button rather than spill out.
             foreach (TextMeshProUGUI t in new[] { label, secondaryLabel })

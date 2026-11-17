@@ -27,8 +27,11 @@ namespace SliceNServe.UI
 
         public bool IsVisible => _visible;
 
+        private Vector2 _primaryHome;   // where the builder placed the primary button (its two-button spot)
+
         private void Awake()
         {
+            _primaryHome = ((RectTransform)button.transform).anchoredPosition;
             button.onClick.AddListener(Confirm);
             if (secondaryButton != null) secondaryButton.onClick.AddListener(Secondary);
         }
@@ -48,10 +51,10 @@ namespace SliceNServe.UI
                 secondaryButton.gameObject.SetActive(two);
                 if (secondaryLabel != null && secondaryAction != null) secondaryLabel.SetText(secondaryAction);
 
-                // One button sits centred; with two, the primary moves left of the secondary.
+                // One button sits centred; with two, the primary goes where the builder put it
+                // (ProjectSetup.BuildOverlay — change its x there, not here).
                 var primary = (RectTransform)button.transform;
-                var second = (RectTransform)secondaryButton.transform;
-                float x = two ? second.anchoredPosition.x - (second.sizeDelta.x + primary.sizeDelta.x) * 0.5f - 24f : 0f;
+                float x = two ? _primaryHome.x : 0f;
                 primary.anchoredPosition = new Vector2(x, primary.anchoredPosition.y);
             }
             _visible = true;
