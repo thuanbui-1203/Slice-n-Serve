@@ -31,6 +31,19 @@ namespace SliceNServe.UI
             [Range(0f, 1f)] public float pan;
         }
 
+        [Header("Sound files (Assets/Audio) — each replaces its synthesised sound when set")]
+        [SerializeField] private AudioClip runEndClip;
+        [SerializeField] private AudioClip orderServedClip;
+        [SerializeField] private AudioClip knifeBounceClip;
+        [SerializeField] private AudioClip knifeLaunchClip;
+        [Tooltip("One is picked at random for each roll.")]
+        [SerializeField] private AudioClip[] diceRollClips;
+        [SerializeField] private AudioClip rushStartClip;
+        [SerializeField] private AudioClip rushEndClip;
+        [Tooltip("Sound files are turned down (never up) to about this loudness (RMS; 0.1 ≈ -20 dB), "
+               + "so a loud recording never drowns the rest.")]
+        [SerializeField, Range(0.01f, 1f)] private float fileLoudness = 0.1f;
+
         [Header("Randomness on every play")]
         [Tooltip("Knife, slices, bounces, waste, serve: the sounds heard over and over.")]
         [SerializeField] private Variation gameplay = new Variation { pitch = 0.07f, volume = 0.25f, pan = 0.3f };
@@ -45,7 +58,10 @@ namespace SliceNServe.UI
         [SerializeField, Range(0f, 1f)] private float musicLevel = 0.6f;
 
         private AudioClip[] _launch, _bounce, _slice, _waste, _serve;
-        private AudioClip _expire, _gameOver, _tick, _purchase, _rush;
+        private AudioClip _expire, _gameOver, _tick, _purchase, _rush, _rushEnd;
+        private AudioClip[] _dice;
+        private readonly System.Collections.Generic.Dictionary<AudioClip, float> _gain =
+            new System.Collections.Generic.Dictionary<AudioClip, float>();
         private AudioSource[] _voices;
         private int _nextVoice;
         private EventBus _events;
@@ -81,6 +97,16 @@ namespace SliceNServe.UI
             _purchase = Arpeggio("purchase", new[] { 523f, 659f, 784f, 1047f }, 0.06f, 0.4f);
             _rush = Arpeggio("rush", new[] { 880f, 659f, 880f, 659f, 880f }, 0.1f, 0.45f, square: true);
 
+            // Recorded sounds, where provided, replace the synthesised ones (still varied per play).
+            if (knifeLaunchClip != null) _launch = new[] { Level(knifeLaunchClip) };
+            if (knifeBounceClip != null) _bounce = new[] { Level(knifeBounceClip) };
+            if (orderServedClip != null) _serve = new[] { Level(orderServedClip) };
+            if (runEndClip != null) _gameOver = Level(runEndClip);
+            if (rushStartClip != null) _rush = Level(rushStartClip);
+            if (rushEndClip != null) _rushEnd = Level(rushEndClip);
+            _dice = System.Array.FindAll(diceRollClips ?? new AudioClip[0], c => c != null);
+            for (int i = 0; i < _dice.Length; i++) Level(_dice[i]);
+
             _events.Subscribe<KnifeLaunched>(OnLaunched);
             _events.Subscribe<KnifeBounced>(OnBounced);
             _events.Subscribe<IngredientSliced>(OnSliced);
@@ -89,6 +115,7 @@ namespace SliceNServe.UI
             _events.Subscribe<OrderExpired>(OnExpired);
             _events.Subscribe<GameOver>(OnGameOver);
             _events.Subscribe<RushHourChanged>(OnRush);
+            _events.Subscribe<DiceRolled>(OnDiceRolled);
         }
 
         /// <summary>Follows the Settings panel's sliders, and starts the background music.</summary>
@@ -126,6 +153,7 @@ namespace SliceNServe.UI
             _events.Unsubscribe<OrderExpired>(OnExpired);
             _events.Unsubscribe<GameOver>(OnGameOver);
             _events.Unsubscribe<RushHourChanged>(OnRush);
+            _events.Unsubscribe<DiceRolled>(OnDiceRolled);
         }
 
         /// <summary>For UI buttons.</summary>
@@ -156,7 +184,8 @@ namespace SliceNServe.UI
         private void OnServed(OrderServed e) => Play(_serve, 1f);
         private void OnExpired(OrderExpired e) => Play(_expire, 1f, stinger);
         private void OnGameOver(GameOver e) => Play(_gameOver, 1f, stinger);
-        private void OnRush(RushHourChanged e) { if (e.Active) Play(_rush, 1f, stinger); }
+        private void OnRush(RushHourChanged e) => Play(e.Active ? _rush : _rushEnd, 1f, stinger);
+        private void OnDiceRolled(DiceRolled e) => Play(_dice, 1f);
 
         /// <summary>A random take of a frequent sound, with the gameplay variation.</summary>
         private void Play(AudioClip[] takes, float pitch)
@@ -175,8 +204,37 @@ namespace SliceNServe.UI
             _nextVoice = (_nextVoice + 1) % _voices.Length;
             voice.pitch = pitch * (1f + Random.Range(-vary.pitch, vary.pitch));
             voice.panStereo = Random.Range(-vary.pan, vary.pan);
-            voice.PlayOneShot(clip, volume * SfxVolume * (1f - Random.Range(0f, vary.volume)));
+            float level = _gain.TryGetValue(clip, out float g) ? g : 1f;
+            voice.PlayOneShot(clip, volume * SfxVolume * level * (1f - Random.Range(0f, vary.volume)));
         }
+
+        /// <summary>
+        /// Measures a sound file once and remembers how far to turn it down so it sits at
+        /// <see cref="fileLoudness"/>. Only ever quieter: a soft file is left as recorded.
+        /// </summary>
+        private AudioClip Level(AudioClip clip)
+        {
+            if (clip == null || _gain.ContainsKey(clip)) return clip;
+            float gain = 1f;
+            try
+            {
+                if (clip.loadState != AudioDataLoadState.Loaded) clip.LoadAudioData();
+                var data = new float[clip.samples * clip.channels];
+                if (data.Length > 0 && clip.GetData(data, 0))
+                {
+                    double sum = 0;
+                    for (int i = 0; i < data.Length; i++) sum += data[i] * data[i];
+                    float rms = (float)System.Math.Sqrt(sum / data.Length);
+                    if (rms > 1e-5f) gain = Mathf.Min(1f, fileLoudness / rms);
+                }
+            }
+            catch (System.Exception) { /* streamed or unreadable: play as recorded */ }
+            _gain[clip] = gain;
+            return clip;
+        }
+
+        /// <summary>For tests: how much a sound file is turned down (1 = as recorded).</summary>
+        public float GainOf(AudioClip clip) => clip != null && _gain.TryGetValue(clip, out float g) ? g : 1f;
 
         /// <summary>Per-take scales for the synthesised sounds: frequency, a second frequency,
         /// length and noise, each a few per cent either side of 1.</summary>

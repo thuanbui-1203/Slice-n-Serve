@@ -757,6 +757,7 @@ namespace SliceNServe.EditorTools
             var gameAudio = audioGo.AddComponent<GameAudio>();
             SetRefs(gameAudio, ("source", audioSource), ("musicSource", musicSource),
                     ("music", AssetDatabase.LoadAssetAtPath<AudioClip>(ArtFpp + "/Audio/Song1.mp3")));
+            AssignSoundFiles(gameAudio);
 
             Menus menus = BuildHud(cam, ticketPrefab, cardPrefab, font, gameAudio, customerLine);
             SetArray(aim, "blockers", new Object[] { menus.HudUpgrades.transform, menus.Orders.transform.Find("Slide"), menus.AutoToggle.transform, menus.Pause.transform });
@@ -1294,6 +1295,68 @@ namespace SliceNServe.EditorTools
             return new Menus { Hud = hud, Overlay = overlay, Shop = shop, MainMenu = mainMenu, Settings = settings, HudUpgrades = hudUpgrades, Banner = banner, Orders = ordersPanel, Pause = pause,
                              AutoToggle = autoToggle, AutoLabel = autoLabel, Versus = versus, PvpHud = pvpHud, Lobby = lobby, Chooser = chooser,
                              SoloOnly = new[] { pause.gameObject, status.gameObject, hudUpgrades.gameObject, autoToggle.gameObject, hintRt.gameObject } };
+        }
+
+        // ---------------------------------------------------------------- sound files
+
+        private const string SfxDir = "Assets/Audio";
+
+        /// <summary>
+        /// Sound files in Assets/Audio, matched to their moment by name (any of .wav/.ogg/.mp3).
+        /// A missing file keeps the synthesised sound. Every "RollTheDice*" file joins the dice
+        /// pool. Short sounds load fully into memory, so they play instantly and can be measured.
+        /// </summary>
+        private static void AssignSoundFiles(GameAudio gameAudio)
+        {
+            if (!AssetDatabase.IsValidFolder(SfxDir)) return;
+            string[] files = Directory.GetFiles(SfxDir)
+                .Where(f => f.EndsWith(".wav") || f.EndsWith(".ogg") || f.EndsWith(".mp3"))
+                .Select(f => f.Replace('\\', '/')).OrderBy(f => f).ToArray();
+
+            AudioClip Clip(string path)
+            {
+                if (AssetImporter.GetAtPath(path) is AudioImporter importer)
+                {
+                    AudioImporterSampleSettings s = importer.defaultSampleSettings;
+                    if (s.loadType != AudioClipLoadType.DecompressOnLoad || !s.preloadAudioData)
+                    {
+                        s.loadType = AudioClipLoadType.DecompressOnLoad;
+                        s.preloadAudioData = true;
+                        importer.defaultSampleSettings = s;
+                        importer.SaveAndReimport();
+                    }
+                }
+                return AssetDatabase.LoadAssetAtPath<AudioClip>(path);
+            }
+            AudioClip Named(string stem)
+            {
+                string hit = files.FirstOrDefault(f => Path.GetFileNameWithoutExtension(f).Equals(stem, System.StringComparison.OrdinalIgnoreCase));
+                return hit != null ? Clip(hit) : null;
+            }
+
+            var map = new (string field, string file)[]
+            {
+                ("runEndClip", "EndingTheRun_SFX"),
+                ("orderServedClip", "FinishAnOrder_SFX"),
+                ("knifeBounceClip", "KnifeBouncing_SFX"),
+                ("knifeLaunchClip", "LaunchingTheKnife_SFX"),
+                ("rushStartClip", "RushHourStart_SFX"),
+                ("rushEndClip", "RushHourEnd_SFX"),
+            };
+            var found = new System.Collections.Generic.List<string>();
+            foreach ((string field, string file) in map)
+            {
+                AudioClip clip = Named(file);
+                if (clip == null) continue;
+                SetRefs(gameAudio, (field, clip));
+                found.Add(file);
+            }
+
+            AudioClip[] dice = files.Where(f => Path.GetFileName(f).StartsWith("RollTheDice", System.StringComparison.OrdinalIgnoreCase))
+                                    .Select(Clip).Where(c => c != null).ToArray();
+            SetArray(gameAudio, "diceRollClips", dice.ToArray<Object>());
+            if (dice.Length > 0) found.Add($"{dice.Length} dice roll(s)");
+            Debug.Log($"[Setup] Sound files from {SfxDir}: {(found.Count > 0 ? string.Join(", ", found) : "none")}.");
         }
 
         // ---------------------------------------------------------------- §5 PvP

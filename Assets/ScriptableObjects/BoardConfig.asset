@@ -72,6 +72,9 @@ MonoBehaviour:
   helperLaunchInterval: 4
   helperLaunchSpeed: 15
   ingredientCeiling: 120
+  lastBounceDamping: 4
+  stopSpeed: 0.6
+  launchWallClearance: 1
   autoThrowPause: 0.35
   restockTapCooldown: 0.12
   cashMultiplier: 1

@@ -138,6 +138,31 @@ namespace SliceNServe.Tests
             Assert.That(pans.Count, Is.GreaterThan(4), "and its own place left-right");
         }
 
+        [Test]
+        public void SoundFiles_AreWiredByName_AndLevelled()
+        {
+            var audio = Object.FindAnyObjectByType<SliceNServe.UI.GameAudio>();
+            AudioClip Field(string name)
+                => (AudioClip)typeof(SliceNServe.UI.GameAudio).GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(audio);
+
+            AudioClip rushStart = Field("rushStartClip");
+            if (rushStart == null) Assert.Ignore("No sound files in Assets/Audio: the synthesised sounds play.");
+
+            var expected = new (string field, string file)[]
+            {
+                ("runEndClip", "EndingTheRun_SFX"), ("orderServedClip", "FinishAnOrder_SFX"), ("knifeBounceClip", "KnifeBouncing_SFX"),
+                ("knifeLaunchClip", "LaunchingTheKnife_SFX"), ("rushStartClip", "RushHourStart_SFX"), ("rushEndClip", "RushHourEnd_SFX"),
+            };
+            foreach ((string field, string file) in expected)
+                Assert.That(Field(field)?.name, Is.EqualTo(file), field);
+
+            var dice = (AudioClip[])typeof(SliceNServe.UI.GameAudio).GetField("diceRollClips", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(audio);
+            Assert.That(dice.Length, Is.EqualTo(2), "both dice rolls are in the pool");
+
+            Assert.That(audio.GainOf(rushStart), Is.LessThan(0.6f), "the loudest file is turned down");
+            foreach (AudioClip c in dice) Assert.That(audio.GainOf(c), Is.InRange(0.01f, 1f), "never turned up");
+        }
+
         [UnityTest]
         public IEnumerator EveryThrow_RollsTheDieForTheNext()
         {

@@ -1,3 +1,26 @@
+# SFX — DONE (2026-11-17)
+
+The recorded sounds in `Assets/Audio` (WAV, 44.1 kHz, converted from the original MP3s with a 20 ms
+fade-out) are wired by file name in `ProjectSetup.AssignSoundFiles` -> `GameAudio`:
+
+| File | Plays on |
+| --- | --- |
+| EndingTheRun_SFX | GameOver |
+| FinishAnOrder_SFX | OrderServed (the player hands a dish over) |
+| KnifeBouncing_SFX | KnifeBounced |
+| LaunchingTheKnife_SFX | KnifeLaunched |
+| RollTheDice_SFX, RollTheDice_SFX2 (every RollTheDice* file) | DiceRolled, one at random |
+| RushHourStart_SFX | RushHourChanged (start) |
+| RushHourEnd_SFX | RushHourChanged (end) |
+
+A missing file falls back to the synthesised sound. Files are levelled at load (turned down, never up,
+to ~-20 dB RMS: `GameAudio.fileLoudness`) and varied per play like every other sound.
+Not yet replaced (still synthesised): slice, waste, expire, purchase, button click.
+
+---
+
+Original note, kept for reference:
+
 # SFX to replace (note for later — nothing changed yet)
 
 Every sound today is **synthesised at startup** in `Assets/Scripts/Runtime/UI/GameAudio.cs`
