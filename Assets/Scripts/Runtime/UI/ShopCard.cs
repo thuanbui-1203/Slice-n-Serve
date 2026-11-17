@@ -49,7 +49,7 @@ namespace SliceNServe.UI
                 ? $"{_upgrade.Describe(owned)}  (max)"
                 : owned == 0
                     ? $"Next: {_upgrade.Describe(1)}"
-                    : $"{_upgrade.Describe(owned)} → {_upgrade.Describe(owned + 1)}");
+                    : $"{_upgrade.Describe(owned)} -> {_upgrade.Describe(owned + 1)}");
 
             if (maxed)
             {

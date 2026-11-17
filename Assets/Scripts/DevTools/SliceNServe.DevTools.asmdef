@@ -1,0 +1,18 @@
+{
+    "name": "SliceNServe.DevTools",
+    "rootNamespace": "SliceNServe.DevTools",
+    "references": [
+        "SliceNServe.Runtime",
+        "UnityEngine.UI",
+        "Unity.TextMeshPro"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

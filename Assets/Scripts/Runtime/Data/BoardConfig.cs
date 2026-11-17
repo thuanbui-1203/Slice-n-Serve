@@ -28,7 +28,7 @@ namespace SliceNServe.Data
         [Tooltip("Where ingredients may spawn: the board minus edge margins, minus a reserved "
                + "launch corridor at the bottom and a matching band at the top, which the order "
                + "tickets sit over at 16:9.")]
-        public Rect ingredientZone = new Rect(-2.5f, -1.8f, 10.0f, 5.1f);
+        public Rect ingredientZone = new Rect(-2.5f, -1.8f, 9.0f, 5.1f);
 
         [Header("Knife (plan §5.2, §5.3)")]
         [Tooltip("Board units of drag that produce full power. Independently of pixels, so mouse "

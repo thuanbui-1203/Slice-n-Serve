@@ -30,6 +30,8 @@ namespace SliceNServe.Tests
         [TestCase(2048, 1536, "tablet_4x3", ExpectedResult = null)]
         [TestCase(1920, 1200, "pc_16x10", ExpectedResult = null)]
         [TestCase(3840, 1080, "ultrawide_32x9", ExpectedResult = null)]
+        [TestCase(1280, 720, "editor_720p", ExpectedResult = null)]     // a typical Editor Game view
+        [TestCase(960, 540, "editor_small", ExpectedResult = null)]    // a docked, smaller Game view
         public IEnumerator Capture(int width, int height, string label)
         {
             string dir = System.Environment.GetEnvironmentVariable("SNAPSHOT_DIR");
@@ -57,6 +59,17 @@ namespace SliceNServe.Tests
                 yield return Render(cam, rt, Path.Combine(dir, $"{label}_0_settings.png"));
                 settings.Close();
                 for (int i = 0; i < 20; i++) yield return null;
+
+                var chooser = Object.FindAnyObjectByType<VersusChooser>(FindObjectsInactive.Include);
+                chooser.Open(null, null, null);
+                for (int i = 0; i < 5; i++) yield return null;
+                yield return Render(cam, rt, Path.Combine(dir, $"{label}_0_chooser.png"));
+                chooser.gameObject.SetActive(false);
+                var lobby = Object.FindAnyObjectByType<PvpLobby>(FindObjectsInactive.Include);
+                lobby.Open(null);
+                for (int i = 0; i < 5; i++) yield return null;
+                yield return Render(cam, rt, Path.Combine(dir, $"{label}_0_lobby.png"));
+                lobby.gameObject.SetActive(false);
 
                 // The shop mid-progression: some cash, a few levels bought, one maxed-out row.
                 ServiceRegistry services = ServiceRegistry.Current;
@@ -106,11 +119,41 @@ namespace SliceNServe.Tests
                 runner.ToggleOrders();
                 for (int i = 0; i < 30; i++) yield return null;
                 yield return Render(cam, rt, Path.Combine(dir, $"{label}_6_orders.png"));
+                runner.ToggleOrders();
+
+                // The end-of-run card, as the results show it (fonts match the shop's).
+                var overlay = Object.FindAnyObjectByType<RunOverlay>(FindObjectsInactive.Include);
+                overlay.Show("Kitchen closed!",
+                    "Your reputation ran out.\n\nOrders served: <color=#B5381F>12</color>  (best 30)\n"
+                  + "Cash earned: <color=#B5381F>$480</color>  |  In the till: <color=#B5381F>$1229</color>\n"
+                  + "Best combo: <color=#B5381F>x7</color>  |  Order level reached: <color=#B5381F>3</color>",
+                    "Play again", () => { }, "Main menu", () => { });
+                for (int i = 0; i < 30; i++) yield return null;
+                yield return Render(cam, rt, Path.Combine(dir, $"{label}_7_results.png"));
+
+                // §5 Play with Friends: two boards on one screen, mid-match.
+                Pvp.MatchSetup.BeginLocal(42, 60f);
+                SceneManager.LoadScene("Game");
+                yield return null;
+                yield return null;
+                cam = Camera.main;
+                ConfigureCamera(cam, rt, width, height);
+                var pvp = Object.FindAnyObjectByType<Pvp.PvpRunner>();
+                pvp.BeginPlay();
+                Time.timeScale = 3f;
+                for (int i = 0; i < 60; i++) yield return null;
+                pvp.KnivesOf(0).Launch(new Vector2(0.4f, 1f).normalized * 18f, LaunchSource.Manual);
+                pvp.KnivesOf(1).Launch(new Vector2(-0.5f, 1f).normalized * 18f, LaunchSource.Manual);
+                for (int i = 0; i < 30; i++) yield return null;
+                Time.timeScale = 1f;
+                yield return Render(cam, rt, Path.Combine(dir, $"{label}_8_versus.png"));
+                Pvp.MatchSetup.Clear();
             }
             finally
             {
                 pointer.Dispose();
                 Time.timeScale = 1f;
+                Pvp.MatchSetup.Clear();
             }
         }
 
@@ -129,7 +172,7 @@ namespace SliceNServe.Tests
             cam.orthographicSize = ViewportMath.OrthographicSize(9.6f, 5.4f, effective);
             cam.rect = ViewportMath.LetterboxRect(aspect, effective);
 
-            var hud = Object.FindAnyObjectByType<OrderTicketHud>().GetComponent<Canvas>();
+            var hud = Object.FindAnyObjectByType<OrderTicketHud>(FindObjectsInactive.Include).GetComponentInParent<Canvas>(true).rootCanvas;
             hud.renderMode = RenderMode.ScreenSpaceCamera;
             hud.worldCamera = cam;
             hud.planeDistance = 1f;

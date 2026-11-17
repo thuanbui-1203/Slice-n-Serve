@@ -66,6 +66,24 @@ namespace SliceNServe.Tests
             Assert.That(HudUpgrades.gameObject.activeInHierarchy, Is.False, "the in-run Upgrades button is hidden on the menu");
         }
 
+        private Button HudPause
+            => Object.FindAnyObjectByType<OrderTicketHud>().transform.Find("SafeAreaRoot/Pause").GetComponent<Button>();
+
+        [UnityTest]
+        public IEnumerator PauseButton_PausesTheRun_AndShowsOnlyWhilePlaying()
+        {
+            Assert.That(HudPause.gameObject.activeInHierarchy, Is.False, "no pause button on the menu");
+            _runner.StartRun();
+            yield return null;
+            Assert.That(HudPause.gameObject.activeInHierarchy, Is.True);
+
+            HudPause.onClick.Invoke();
+            yield return null;
+            Assert.That(_runner.State, Is.EqualTo(GameRunner.RunState.Paused));
+            Assert.That(Time.timeScale, Is.EqualTo(0f));
+            Assert.That(HudPause.gameObject.activeInHierarchy, Is.False, "the pause card's Resume takes over");
+        }
+
         [UnityTest]
         public IEnumerator Play_StartsTheRun()
         {

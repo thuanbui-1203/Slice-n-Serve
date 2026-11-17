@@ -20,5 +20,5 @@ MonoBehaviour:
   baseCost: 120
   costGrowth: 2.5
   effectPerLevel: 1
-  effectFormat: "{0}\xD7 sous-chef"
+  effectFormat: '{0}x sous-chef'
   displayScale: 1

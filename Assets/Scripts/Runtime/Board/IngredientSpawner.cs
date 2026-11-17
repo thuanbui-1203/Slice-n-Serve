@@ -30,6 +30,9 @@ namespace SliceNServe.Board
 
         public IReadOnlyList<IngredientDefinition> Definitions => definitions;
         public int LiveCount => _live.Count;
+
+        /// <summary>Whose board (§5): stamped on every slice so the credit reaches the right player.</summary>
+        public int PlayerId { get; set; }
         public IReadOnlyList<Ingredient> Live => _live;
 
         public void Initialize(RuntimeTuning tuning, EventBus events, GameRandom random = null)
@@ -165,7 +168,7 @@ namespace SliceNServe.Board
             Vector2 position = ingredient.Position;
             Remove(index);
 
-            _events.Publish(new IngredientSliced(def, position, knifeId, bounceIndex, combo));
+            _events.Publish(new IngredientSliced(def, position, knifeId, bounceIndex, combo, PlayerId));
         }
 
         /// <summary>Clears the board, for a run reset.</summary>

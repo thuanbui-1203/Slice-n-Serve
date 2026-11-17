@@ -69,6 +69,22 @@ namespace SliceNServe.Orders
             }
         }
 
+        /// <summary>§5: the same customer for another player — same id, recipe, patience and pay,
+        /// with that player's own (empty) progress.</summary>
+        public OrderInstance CloneFresh()
+        {
+            var lines = new OrderLine[Lines.Length];
+            for (int i = 0; i < lines.Length; i++)
+                lines[i] = new OrderLine { Ingredient = Lines[i].Ingredient, Required = Lines[i].Required, Fulfilled = 0 };
+
+            return new OrderInstance
+            {
+                OrderId = OrderId, Dish = Dish, Customer = Customer, Lines = lines, SpawnTime = SpawnTime,
+                PatienceDuration = PatienceDuration, RemainingPatience = RemainingPatience,
+                RewardScale = RewardScale, RushOrder = RushOrder
+            };
+        }
+
         /// <summary>Builds an order from a recipe. Allocates once per order, never per frame.</summary>
         /// <param name="requiredCount">Maps a recipe count to this order's count — demand growth.
         /// Null orders the recipe as written.</param>

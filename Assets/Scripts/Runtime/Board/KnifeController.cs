@@ -42,6 +42,9 @@ namespace SliceNServe.Board
         public Rigidbody2D Body => body;
         public LaunchSource Source { get; private set; }
 
+        /// <summary>Whose board this knife flies on (§5); set by its <see cref="KnifeManager"/>.</summary>
+        public int PlayerId { get; set; }
+
         /// <summary>Set once this knife has split, so one knife splits at most once (§3).</summary>
         public bool HasSplit { get; set; }
 
@@ -101,7 +104,7 @@ namespace SliceNServe.Board
             body.angularVelocity = -Mathf.Sign(velocity.x == 0f ? 1f : velocity.x) * 900f;
             if (trail != null) trail.Clear();
 
-            _events.Publish(new KnifeLaunched(knifeId, source));
+            _events.Publish(new KnifeLaunched(knifeId, source, PlayerId));
         }
 
         public void ReturnToPool()
@@ -147,7 +150,7 @@ namespace SliceNServe.Board
 
             ContactPoint2D contact = c.GetContact(0);   // contactCount is always >= 1 here
             _bounceCount++;
-            _events.Publish(new KnifeBounced(_knifeId, _bounceCount, contact.point, BounceBudget - _bounceCount));
+            _events.Publish(new KnifeBounced(_knifeId, _bounceCount, contact.point, BounceBudget - _bounceCount, PlayerId));
 
             // Out of bounces: the knife sticks where it hit and is collected next step (never
             // returned to the pool from inside a contact callback).

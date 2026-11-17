@@ -30,6 +30,13 @@ namespace SliceNServe.Orders
 
         public bool Running { get; set; }
 
+        /// <summary>False on an online PvP client: patience still ticks, but orders arrive from the host.</summary>
+        public bool SpawnsOrders { get; set; } = true;
+
+        /// <summary>The recipe and customer tables, by index: what online PvP sends instead of assets.</summary>
+        public System.Collections.Generic.IReadOnlyList<DishDefinition> Dishes => dishes;
+        public System.Collections.Generic.IReadOnlyList<CustomerDefinition> Customers => customers;
+
         /// <summary>The rush-hour schedule and its waves. Null until initialised.</summary>
         public RushHour Rush { get; private set; }
 
@@ -54,6 +61,7 @@ namespace SliceNServe.Orders
 
             float dt = _clock.DeltaTime;
             _queue.Tick(dt);
+            if (!SpawnsOrders) return;
 
             // Rush hour: a whole wave at once, and no walk-ins until the rush is over.
             int wave = Rush.Tick(dt, RushCustomersWaiting());

@@ -29,7 +29,7 @@ MonoBehaviour:
     serializedVersion: 2
     x: -2.5
     y: -1.8
-    width: 10
+    width: 9
     height: 5.1
   maxDragLength: 3.5
   deadZone: 0.35
@@ -37,7 +37,7 @@ MonoBehaviour:
   launchMaxSpeed: 22
   speedHardCap: 40
   minLiveSpeed: 3
-  bounceRetention: 0.9
+  bounceRetention: 1
   maxKnifeLifetime: 15
   maxKnifeBounces: 60
   targetIngredientCount: 12
@@ -72,5 +72,7 @@ MonoBehaviour:
   helperLaunchInterval: 4
   helperLaunchSpeed: 15
   ingredientCeiling: 120
+  autoThrowPause: 0.35
+  restockTapCooldown: 0.12
   cashMultiplier: 1
   patienceUpgradeMultiplier: 1

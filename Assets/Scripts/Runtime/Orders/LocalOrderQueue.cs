@@ -58,6 +58,19 @@ namespace SliceNServe.Orders
             if (target.IsComplete) _events.Publish(new OrderReady(target.OrderId));
         }
 
+        /// <summary>§5: another player served this order first. It leaves this line unpaid —
+        /// the customer was looked after, just not by this kitchen.</summary>
+        public bool Withdraw(int orderId, int byPlayer)
+        {
+            OrderInstance order = Find(orderId);
+            if (order == null || order.IsClosed) return false;
+
+            order.State = PatienceState.Served;
+            _orders.Remove(order);
+            _events.Publish(new OrderTaken(orderId, byPlayer));
+            return true;
+        }
+
         /// <summary>Ready orders are not served automatically: the player taps them in the orders
         /// panel. Until then the customer keeps waiting, and their patience keeps running.</summary>
         public bool TryServe(int orderId)

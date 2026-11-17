@@ -42,6 +42,10 @@ namespace SliceNServe.Board
         /// <summary>The player's knife (manual or auto-thrown), or null.</summary>
         public KnifeController PlayerKnife => _manualKnife;
 
+        /// <summary>Whose board (§5). Set before <see cref="Initialize"/>; knife ids are offset by it,
+        /// so two players' knives never share an id.</summary>
+        public int PlayerId { get; set; }
+
         /// <summary>Fired whenever a knife returns to the launcher.</summary>
         public event Action<KnifeController> KnifeReturned;
 
@@ -49,6 +53,7 @@ namespace SliceNServe.Board
         {
             _tuning = tuning;
             _random = random ?? new GameRandom();
+            _nextId = 1 + PlayerId * 1000000;
             if (BounceBudget == int.MaxValue) BounceBudget = tuning.MaxKnifeBounces;
 
             // Pooled up front and never instantiated during a run.
@@ -58,6 +63,7 @@ namespace SliceNServe.Board
                 k.name = $"Knife_{i}";
                 k.gameObject.SetActive(false);
                 k.Initialize(tuning, events, spawner, bounds.PlayArea);
+                k.PlayerId = PlayerId;
                 k.Expired += OnKnifeExpired;
                 k.Bounced += OnKnifeBounced;
                 _pool[i] = k;

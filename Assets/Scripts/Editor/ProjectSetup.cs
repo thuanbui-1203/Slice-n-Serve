@@ -4,6 +4,7 @@ using SliceNServe.Board;
 using SliceNServe.Core;
 using SliceNServe.Data;
 using SliceNServe.Orders;
+using SliceNServe.Pvp;
 using SliceNServe.UI;
 using TMPro;
 using UnityEditor;
@@ -401,7 +402,7 @@ namespace SliceNServe.EditorTools
                 Upgrade("split_chance", "Twin Blades", UpgradeKind.SplitChance, "scissors", 5, 60, 1.6f, 0.08f, "{0}% split", 100f),
                 Upgrade("spawn_rate", "Fresh Deliveries", UpgradeKind.IngredientSpawnRate, "basket_yellow", 5, 40, 1.5f, 0.15f, "+{0}% restock", 100f),
                 Upgrade("patience", "Free Coffee", UpgradeKind.CustomerPatience, "coffee_bag", 5, 40, 1.5f, 0.10f, "+{0}% patience", 100f),
-                Upgrade("sous_chef", "Sous-Chef", UpgradeKind.SousChef, "spatula", 3, 120, 2.5f, 1f, "{0}× sous-chef", 1f),
+                Upgrade("sous_chef", "Sous-Chef", UpgradeKind.SousChef, "spatula", 3, 120, 2.5f, 1f, "{0}x sous-chef", 1f),
             };
         }
 
@@ -664,7 +665,7 @@ namespace SliceNServe.EditorTools
                 foreach (TextMeshProUGUI t in new[] { title, level, effect, price })
                 {
                     t.fontStyle = FontStyles.Normal;
-                    t.characterSpacing = -9f;
+                    t.characterSpacing = PixelFontSpacing;
                 }
             if (font != Font()) title.fontSize = 31f;   // "Fresh Deliveries" must fit beside the icon
 
@@ -758,7 +759,7 @@ namespace SliceNServe.EditorTools
                     ("music", AssetDatabase.LoadAssetAtPath<AudioClip>(ArtFpp + "/Audio/Song1.mp3")));
 
             Menus menus = BuildHud(cam, ticketPrefab, cardPrefab, font, gameAudio, customerLine);
-            SetArray(aim, "blockers", new Object[] { menus.HudUpgrades.transform, menus.Orders.transform.Find("Slide"), menus.AutoToggle.transform });
+            SetArray(aim, "blockers", new Object[] { menus.HudUpgrades.transform, menus.Orders.transform.Find("Slide"), menus.AutoToggle.transform, menus.Pause.transform });
 
             var runner = new GameObject("Runner").AddComponent<GameRunner>();
             SetRefs(runner,
@@ -767,7 +768,22 @@ namespace SliceNServe.EditorTools
                 ("hud", menus.Hud), ("overlay", menus.Overlay), ("gameAudio", gameAudio), ("shop", menus.Shop),
                 ("mainMenu", menus.MainMenu), ("settingsPanel", menus.Settings), ("hudUpgrades", menus.HudUpgrades), ("banner", menus.Banner),
                 ("customers", customerLine), ("ordersPanel", menus.Orders),
-                ("dice", diceView), ("autoToggle", menus.AutoToggle), ("autoLabel", menus.AutoLabel));
+                ("dice", diceView), ("autoToggle", menus.AutoToggle), ("autoLabel", menus.AutoLabel), ("pvpLobby", menus.Lobby), ("versusChooser", menus.Chooser), ("pauseButton", menus.Pause));
+
+            // §5: builds a PvP match from the same objects when one is asked for (GameRunner steps aside).
+            var pvpRunner = runner.gameObject.AddComponent<PvpRunner>();
+            SetRefs(pvpRunner,
+                ("bootstrap", bootstrap), ("bounds", bounds), ("ingredients", spawner), ("knives", knives), ("aimInput", aim),
+                ("trajectoryPreview", preview), ("dice", diceView), ("orderSpawner", orders), ("boardFx", fx), ("kitchen", kitchen),
+                ("customers", customerLine), ("gameAudio", gameAudio), ("hud", menus.Hud), ("ordersPanel", menus.Orders),
+                ("pvpHud", menus.PvpHud), ("overlay", menus.Overlay));
+            SetArray(pvpRunner, "versusTickets", menus.Versus.ToArray<Object>());
+            SetArray(pvpRunner, "soloOnly", menus.SoloOnly.ToArray<Object>());
+
+            // Developer buttons (add money, reset progress), looked up by name so that deleting
+            // Assets/Scripts/DevTools leaves this script compiling and the game untouched.
+            System.Type devCheats = System.Type.GetType("SliceNServe.DevTools.DevCheats, SliceNServe.DevTools");
+            if (devCheats != null) new GameObject("DevCheats").AddComponent(devCheats);
 
             EditorSceneManager.SaveScene(scene, ScenePath);
         }
@@ -789,8 +805,14 @@ namespace SliceNServe.EditorTools
             // The dining room: wooden plank wall, the pack's front door, a chair and table.
             SetRefs(kitchen, ("diningWall", RestaurantSprite("Tiles", 16)), ("door", RestaurantSprite("Door", 1)));
             SetArray(kitchen, "furniture", Restaurant(("Furniture", 0), ("Furniture", 1)));
-            Sprite chandelier = ArtFolderSprites(ChandelierDir).FirstOrDefault();
-            if (chandelier != null) SetRefs(kitchen, ("chandelier", chandelier));
+            // The first PNG in Assets/Art/Chandelier: one sprite hangs still (it sways), several animate.
+            string chandelierPng = Pngs(ChandelierDir).FirstOrDefault();
+            if (chandelierPng != null)
+            {
+                Sprite[] frames = LoadAllAssetsSorted(chandelierPng);
+                SetArray(kitchen, "chandelierFrames", frames.ToArray<Object>());
+                Debug.Log($"[Setup] Chandelier: {chandelierPng}, {frames.Length} frame(s).");
+            }
 
             SetArray(kitchen, "pans", Marts("frying pan"));
             SetArray(kitchen, "pots", Restaurant(("ChefTools", 5)).Concat(Marts("teakettle")).ToArray());
@@ -981,7 +1003,12 @@ namespace SliceNServe.EditorTools
                 if (importer == null) continue;
                 importer.GetSourceTextureWidthAndHeight(out int width, out int height);
 
-                bool strip = !png.StartsWith(ChandelierDir) && height > 0 && width % height == 0 && width / height > 1;
+                // Dice: any row of square frames. Chandelier: a row of 3+ square frames is an
+                // animation; a sheet the pack (or you, in the Sprite Editor) already sliced is kept.
+                bool chandelier = png.StartsWith(ChandelierDir);
+                bool sliced = importer.spriteImportMode == SpriteImportMode.Multiple
+                              && AssetDatabase.LoadAllAssetsAtPath(png).OfType<Sprite>().Count() > 1;
+                bool strip = height > 0 && width % height == 0 && width / height > (chandelier ? 2 : 1) && !(chandelier && sliced);
                 if (strip) { GridSlice(png, height, height, new Vector2(0.5f, 0.5f), fullRect: false); continue; }
 
                 if (importer.textureType == TextureImporterType.Sprite && importer.filterMode == FilterMode.Point
@@ -1065,7 +1092,13 @@ namespace SliceNServe.EditorTools
             public HudBanner Banner;
             public OrdersPanel Orders;
             public Button AutoToggle;
+            public Button Pause;
             public TextMeshProUGUI AutoLabel;
+            public OrderTicketHud[] Versus;
+            public PvpHud PvpHud;
+            public PvpLobby Lobby;
+            public VersusChooser Chooser;
+            public GameObject[] SoloOnly;
         }
 
         private static Menus BuildHud(Camera cam, OrderTicketView ticketPrefab, ShopCard cardPrefab,
@@ -1134,7 +1167,18 @@ namespace SliceNServe.EditorTools
 
             // Status: cash and reputation, top-right.
             RectTransform status = Rect("Status", safe);
-            Place(status, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-18f, -10f), new Vector2(270f, 140f), new Vector2(1f, 1f));
+            // Pause, at the very top right: the cash and hearts panel sits under it.
+            Button pause = PixelButton("Pause", safe, FppSprite(FppUiSheet, "UI_91"), pixelFont, 28f, Color.white,
+                                       new Vector2(1f, 1f), new Vector2(-18f, -10f), new Vector2(84f, 84f), gameAudio, out TextMeshProUGUI pauseLabel);
+            pauseLabel.SetText("");
+            for (int bar = 0; bar < 2; bar++)
+            {
+                Image b = Img($"Bar{bar}", pause.transform, Placeholder("square"), Color.white);
+                b.preserveAspect = false;
+                Place(b.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(bar == 0 ? -10f : 10f, 2f), new Vector2(12f, 36f), new Vector2(0.5f, 0.5f));
+            }
+
+            Place(status, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-18f, -104f), new Vector2(270f, 140f), new Vector2(1f, 1f));
             Panel(status.gameObject.AddComponent<Image>(), new Color(0.12f, 0.08f, 0.08f, 0.72f));
 
             RectTransform cashRow = Rect("CashRow", status);
@@ -1168,7 +1212,7 @@ namespace SliceNServe.EditorTools
 
             // Mid-run shop, under the status panel: the run freezes while it is open.
             Button hudUpgrades = PixelButton("Upgrades", safe, FppSprite(FppUiSheet, "UI_91"), pixelFont, 30f, Color.white,
-                                             new Vector2(1f, 1f), new Vector2(-18f, -162f), new Vector2(270f, 84f), gameAudio, out TextMeshProUGUI upgradesLabel);
+                                             new Vector2(1f, 1f), new Vector2(-18f, -256f), new Vector2(270f, 84f), gameAudio, out TextMeshProUGUI upgradesLabel);
             upgradesLabel.SetText("Upgrades");
             upgradesLabel.rectTransform.offsetMin = new Vector2(64f, 0f);
             upgradesLabel.rectTransform.offsetMax = new Vector2(-14f, 4f);
@@ -1177,7 +1221,7 @@ namespace SliceNServe.EditorTools
 
             // Auto-throw switch, under Upgrades; GameRunner shows it once auto-throw is unlocked.
             Button autoToggle = PixelButton("AutoThrow", safe, FppSprite(FppUiSheet, "UI_91"), pixelFont, 28f, Color.white,
-                                            new Vector2(1f, 1f), new Vector2(-18f, -254f), new Vector2(270f, 76f), gameAudio, out TextMeshProUGUI autoLabel);
+                                            new Vector2(1f, 1f), new Vector2(-18f, -348f), new Vector2(270f, 76f), gameAudio, out TextMeshProUGUI autoLabel);
             autoLabel.SetText("Auto: ON");
             autoToggle.gameObject.SetActive(false);
 
@@ -1215,18 +1259,159 @@ namespace SliceNServe.EditorTools
                 ("hint", hint), ("boardCamera", cam), ("effectsRoot", effects), ("font", font),
                 ("panel", ordersPanel), ("customers", customerLine));
 
+            // §5 PvP, hidden in solo play: a ticket strip over each half of a shared screen, and
+            // the scoreboard between them (online, it sits at the top over the one board).
+            var versus = new OrderTicketHud[2];
+            for (int i = 0; i < 2; i++)
+            {
+                bool left = i == 0;
+                RectTransform vs = Rect(left ? "TicketsP1" : "TicketsP2", safe);
+                Place(vs, new Vector2(left ? 0f : 1f, 1f), new Vector2(left ? 0f : 1f, 1f), new Vector2(left ? 14f : -14f, -8f),
+                      new Vector2(780f, 166f), new Vector2(left ? 0f : 1f, 1f));
+                var vsRow = vs.gameObject.AddComponent<HorizontalLayoutGroup>();
+                vsRow.spacing = 10f;
+                vsRow.childAlignment = left ? TextAnchor.UpperLeft : TextAnchor.UpperRight;
+                vsRow.childControlWidth = vsRow.childControlHeight = false;
+                vsRow.childForceExpandWidth = vsRow.childForceExpandHeight = false;
+                versus[i] = vs.gameObject.AddComponent<OrderTicketHud>();
+                SetRefs(versus[i], ("container", vs), ("ticketPrefab", ticketPrefab), ("boardCamera", cam), ("effectsRoot", effects), ("font", font));
+                vs.gameObject.SetActive(false);
+            }
+            PvpHud pvpHud = BuildPvpHud(safe, font, pixelFont);
+
             // Sibling order is draw order: the shop and settings open on top of the menu and cards.
             RunOverlay overlay = BuildOverlay(canvasGo.transform, font, pixelFont, gameAudio);
             MainMenu mainMenu = BuildMainMenu(canvasGo.transform, font, pixelFont, gameAudio);
             ShopPanel shop = BuildShop(canvasGo.transform, cardPrefab, font, pixelFont, gameAudio);
             SettingsPanel settings = BuildSettings(canvasGo.transform, font, pixelFont, gameAudio);
+            PvpLobby lobby = BuildPvpLobby(canvasGo.transform, font, pixelFont, gameAudio);
+            VersusChooser chooser = BuildVersusChooser(canvasGo.transform, font, pixelFont, gameAudio);
 
             var eventSystem = new GameObject("EventSystem");
             eventSystem.AddComponent<UnityEngine.EventSystems.EventSystem>();
             eventSystem.AddComponent<InputSystemUIInputModule>();
 
-            return new Menus { Hud = hud, Overlay = overlay, Shop = shop, MainMenu = mainMenu, Settings = settings, HudUpgrades = hudUpgrades, Banner = banner, Orders = ordersPanel,
-                             AutoToggle = autoToggle, AutoLabel = autoLabel };
+            return new Menus { Hud = hud, Overlay = overlay, Shop = shop, MainMenu = mainMenu, Settings = settings, HudUpgrades = hudUpgrades, Banner = banner, Orders = ordersPanel, Pause = pause,
+                             AutoToggle = autoToggle, AutoLabel = autoLabel, Versus = versus, PvpHud = pvpHud, Lobby = lobby, Chooser = chooser,
+                             SoloOnly = new[] { pause.gameObject, status.gameObject, hudUpgrades.gameObject, autoToggle.gameObject, hintRt.gameObject } };
+        }
+
+        // ---------------------------------------------------------------- §5 PvP
+
+        private static PvpHud BuildPvpHud(RectTransform safe, TMP_FontAsset font, TMP_FontAsset pixelFont)
+        {
+            // Top centre, between the two ticket strips: the clock, and each side's cash.
+            RectTransform root = Rect("PvpHud", safe);
+            Place(root, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -8f), new Vector2(330f, 166f), new Vector2(0.5f, 1f));
+            Panel(root.gameObject.AddComponent<Image>(), new Color(0.12f, 0.08f, 0.08f, 0.85f));
+            var group = root.gameObject.AddComponent<CanvasGroup>();
+            group.blocksRaycasts = false;
+
+            TextMeshProUGUI clock = Text("Clock", root, pixelFont, 56f, Color.white, TextAlignmentOptions.Center, bold: false);
+            Place(clock.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, -6f), new Vector2(0f, 64f), new Vector2(0.5f, 1f));
+
+            TextMeshProUGUI ScoreText(string name, bool left, Color color, float size, float y)
+            {
+                TextMeshProUGUI t = Text(name, root, pixelFont, size, color, left ? TextAlignmentOptions.Left : TextAlignmentOptions.Right, bold: false);
+                Place(t.rectTransform, new Vector2(left ? 0f : 0.5f, 0f), new Vector2(left ? 0.5f : 1f, 0f),
+                      new Vector2(left ? 14f : -14f, y), new Vector2(-14f, 44f), new Vector2(left ? 0f : 1f, 0f));
+                return t;
+            }
+            var p1 = new Color(0.45f, 0.75f, 1f);
+            var p2 = new Color(1f, 0.55f, 0.4f);
+            TextMeshProUGUI leftName = ScoreText("LeftName", true, p1, 22f, 50f);
+            TextMeshProUGUI rightName = ScoreText("RightName", false, p2, 22f, 50f);
+            TextMeshProUGUI leftScore = ScoreText("LeftScore", true, Color.white, 38f, 8f);
+            TextMeshProUGUI rightScore = ScoreText("RightScore", false, Color.white, 38f, 8f);
+
+            // The big centre message: "Waiting for your rival...", the 3-2-1 countdown.
+            TextMeshProUGUI message = Text("Message", safe, pixelFont, 110f, Color.white, TextAlignmentOptions.Center, bold: false);
+            Place(message.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1400f, 200f), new Vector2(0.5f, 0.5f));
+            message.outlineWidth = 0.22f;
+            message.outlineColor = new Color32(40, 20, 20, 255);
+            message.transform.SetParent(root, true);
+
+            var hud = root.gameObject.AddComponent<PvpHud>();
+            SetRefs(hud, ("group", group), ("leftName", leftName), ("leftScore", leftScore), ("rightName", rightName),
+                    ("rightScore", rightScore), ("clock", clock), ("message", message));
+            root.gameObject.SetActive(false);
+            return hud;
+        }
+
+        private static PvpLobby BuildPvpLobby(Transform canvas, TMP_FontAsset font, TMP_FontAsset pixelFont, GameAudio gameAudio)
+        {
+            TMP_FontAsset cardFont = TooltipFont(font);
+            RectTransform root = Rect("PvpLobby", canvas);
+            Stretch(root);
+            root.gameObject.AddComponent<Image>().color = new Color(0.05f, 0.03f, 0.03f, 0.8f);
+            var group = root.gameObject.AddComponent<CanvasGroup>();
+
+            RectTransform card = Rect("Card", root);
+            Place(card, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(980f, 660f), new Vector2(0.5f, 0.5f));
+            Panel(card.gameObject.AddComponent<Image>(), Paper);
+
+            TextMeshProUGUI title = Text("Title", card, pixelFont, 72f, new Color(0.75f, 0.22f, 0.15f), TextAlignmentOptions.Center, bold: false);
+            Place(title.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, -30f), new Vector2(-60f, 90f), new Vector2(0.5f, 1f));
+            title.SetText("PvP match");
+
+            TextMeshProUGUI status = Text("Status", card, cardFont, 30f, Ink, TextAlignmentOptions.Center, bold: false);
+            Place(status.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, -130f), new Vector2(-80f, 130f), new Vector2(0.5f, 1f));
+            status.textWrappingMode = TextWrappingModes.Normal;
+            title.SetText("PvP match");
+
+            Button find = MakeButton("Find", card, cardFont, 44f, Accent, new Vector2(0f, 200f), new Vector2(460f, 110f), gameAudio, out TextMeshProUGUI findLabel);
+            findLabel.SetText("Find match");
+
+            Button back = MakeButton("Back", card, cardFont, 36f, new Color(0.45f, 0.32f, 0.26f), new Vector2(0f, 50f), new Vector2(320f, 90f), gameAudio, out TextMeshProUGUI backLabel);
+            backLabel.SetText("Back");
+
+            if (cardFont != font)
+                foreach (TextMeshProUGUI t in new[] { status, findLabel, backLabel })
+                {
+                    t.fontStyle = FontStyles.Normal;
+                    t.characterSpacing = PixelFontSpacing;
+                }
+
+            var lobby = root.gameObject.AddComponent<PvpLobby>();
+            SetRefs(lobby, ("group", group), ("find", find), ("findLabel", findLabel), ("back", back), ("status", status));
+            root.gameObject.SetActive(false);
+            return lobby;
+        }
+
+        /// <summary>Play with Friends → a friend on this device, or the CPU.</summary>
+        private static VersusChooser BuildVersusChooser(Transform canvas, TMP_FontAsset font, TMP_FontAsset pixelFont, GameAudio gameAudio)
+        {
+            TMP_FontAsset cardFont = TooltipFont(font);
+            RectTransform root = Rect("VersusChooser", canvas);
+            Stretch(root);
+            root.gameObject.AddComponent<Image>().color = new Color(0.05f, 0.03f, 0.03f, 0.8f);
+
+            RectTransform card = Rect("Card", root);
+            Place(card, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(820f, 600f), new Vector2(0.5f, 0.5f));
+            Panel(card.gameObject.AddComponent<Image>(), Paper);
+
+            TextMeshProUGUI title = Text("Title", card, pixelFont, 72f, new Color(0.75f, 0.22f, 0.15f), TextAlignmentOptions.Center, bold: false);
+            Place(title.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, -30f), new Vector2(-60f, 90f), new Vector2(0.5f, 1f));
+            title.SetText("Play with...");
+
+            Button friend = MakeButton("Friend", card, cardFont, 42f, Accent, new Vector2(0f, 330f), new Vector2(520f, 104f), gameAudio, out TextMeshProUGUI friendLabel);
+            friendLabel.SetText("A friend");
+            Button cpu = MakeButton("Cpu", card, cardFont, 42f, new Color(0.27f, 0.5f, 0.3f), new Vector2(0f, 200f), new Vector2(520f, 104f), gameAudio, out TextMeshProUGUI cpuLabel);
+            cpuLabel.SetText("The CPU");
+            Button back = MakeButton("Back", card, cardFont, 36f, new Color(0.45f, 0.32f, 0.26f), new Vector2(0f, 50f), new Vector2(320f, 90f), gameAudio, out TextMeshProUGUI backLabel);
+            backLabel.SetText("Back");
+
+            if (cardFont != font)
+                foreach (TextMeshProUGUI t in new[] { friendLabel, cpuLabel, backLabel })
+                {
+                    t.fontStyle = FontStyles.Normal;
+                    t.characterSpacing = PixelFontSpacing;
+                }
+
+            var chooser = root.gameObject.AddComponent<VersusChooser>();
+            SetRefs(chooser, ("friend", friend), ("cpu", cpu), ("back", back));
+            root.gameObject.SetActive(false);
+            return chooser;
         }
 
         // ---------------------------------------------------------------- main menu & settings
@@ -1265,17 +1450,28 @@ namespace SliceNServe.EditorTools
 
             // The menu card: Food-Ping-Pong's framed paper, with the three choices stacked.
             RectTransform card = Rect("Card", root);
-            Place(card, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -150f), new Vector2(620f, 680f), new Vector2(0.5f, 0.5f));
+            Place(card, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -160f), new Vector2(620f, 700f), new Vector2(0.5f, 0.5f));
             PixelPanel(card.gameObject.AddComponent<Image>(), FppSprite(FppBooksSheet, "UI books & more_18"));
 
-            Button play = PixelButton("Play", card, FppSprite(FppUiSheet, "UI_91"), pixelFont, 72f, Color.white,
-                                      new Vector2(0.5f, 1f), new Vector2(0f, -60f), new Vector2(460f, 130f), gameAudio, out TextMeshProUGUI playLabel);
+            Button play = PixelButton("Play", card, FppSprite(FppUiSheet, "UI_91"), pixelFont, 68f, Color.white,
+                                      new Vector2(0.5f, 1f), new Vector2(0f, -48f), new Vector2(460f, 118f), gameAudio, out TextMeshProUGUI playLabel);
             playLabel.SetText("Play");
-            Button upgrade = MenuButton("Upgrade", card, pixelFont, "Shop", new Vector2(0f, -210f), gameAudio);
-            Button settings = MenuButton("Settings", card, pixelFont, "Settings", new Vector2(0f, -322f), gameAudio);
+
+            // §5: the two PvP entries, side by side under Play.
+            Button friends = PixelButton("Friends", card, FppSprite(FppUiSheet, "UI_91"), pixelFont, 30f, Color.white,
+                                         new Vector2(0.5f, 1f), new Vector2(-117f, -178f), new Vector2(226f, 84f), gameAudio, out TextMeshProUGUI friendsLabel);
+            friendsLabel.SetText("Play with\nFriends");
+            friendsLabel.lineSpacing = -20f;
+            Button pvp = PixelButton("Pvp", card, FppSprite(FppUiSheet, "UI_91"), pixelFont, 30f, Color.white,
+                                     new Vector2(0.5f, 1f), new Vector2(117f, -178f), new Vector2(226f, 84f), gameAudio, out TextMeshProUGUI pvpLabel);
+            pvpLabel.SetText("Enter PvP\nmatch");
+            pvpLabel.lineSpacing = -20f;
+
+            Button upgrade = MenuButton("Upgrade", card, pixelFont, "Shop", new Vector2(0f, -278f), gameAudio);
+            Button settings = MenuButton("Settings", card, pixelFont, "Settings", new Vector2(0f, -386f), gameAudio);
 
             // Exit, last and quieter: smaller, with a red label, so it is never mistaken for Play.
-            Button exit = MenuButton("Exit", card, pixelFont, "X", new Vector2(0f, -434f), gameAudio);
+            Button exit = MenuButton("Exit", card, pixelFont, "X", new Vector2(0f, -494f), gameAudio);
             var exitRt = (RectTransform)exit.transform;
             exitRt.sizeDelta = new Vector2(360f, 86f);
             exit.GetComponentInChildren<TextMeshProUGUI>().color = new Color(0.72f, 0.2f, 0.15f);
@@ -1302,6 +1498,7 @@ namespace SliceNServe.EditorTools
 
             var menu = root.gameObject.AddComponent<MainMenu>();
             SetRefs(menu, ("group", group), ("logo", logo), ("play", play), ("upgrade", upgrade), ("settings", settings), ("exit", exit),
+                    ("friends", friends), ("pvp", pvp),
                     ("till", cash), ("best", best), ("upgradeBadge", badge.gameObject));
             return menu;
         }
@@ -1435,7 +1632,10 @@ namespace SliceNServe.EditorTools
             TextMeshProUGUI title = Text("Title", card, pixelFont, 84f, new Color(0.75f, 0.22f, 0.15f), TextAlignmentOptions.Center, bold: false);
             Place(title.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, -36f), new Vector2(-60f, 110f), new Vector2(0.5f, 1f));
 
-            TextMeshProUGUI body = Text("Body", card, font, 32f, Ink, TextAlignmentOptions.Center, bold: false);
+            // Body and buttons in the upgrade cards' pixel font (Sol Schori), so the pause and
+            // end-of-run cards read like the shop.
+            TMP_FontAsset cardFont = TooltipFont(font);
+            TextMeshProUGUI body = Text("Body", card, cardFont, 34f, Ink, TextAlignmentOptions.Center, bold: false);
             Place(body.rectTransform, new Vector2(0f, 0f), new Vector2(1f, 1f), Vector2.zero, Vector2.zero, new Vector2(0.5f, 0.5f));
             body.rectTransform.offsetMin = new Vector2(60f, 170f);
             body.rectTransform.offsetMax = new Vector2(-60f, -160f);
@@ -1443,8 +1643,16 @@ namespace SliceNServe.EditorTools
             body.lineSpacing = 8f;
 
             // Primary action centred; RunOverlay slides it left when the secondary one is shown.
-            Button button = MakeButton("Button", card, font, 42f, Accent, new Vector2(0f, 48f), new Vector2(460f, 104f), gameAudio, out TextMeshProUGUI label);
-            Button secondary = MakeButton("Secondary", card, font, 38f, new Color(0.45f, 0.32f, 0.26f), new Vector2(250f, 48f), new Vector2(300f, 104f), gameAudio, out TextMeshProUGUI secondaryLabel);
+            Button button = MakeButton("Button", card, cardFont, 42f, Accent, new Vector2(0f, 48f), new Vector2(460f, 104f), gameAudio, out TextMeshProUGUI label);
+            Button secondary = MakeButton("Secondary", card, cardFont, 38f, new Color(0.45f, 0.32f, 0.26f), new Vector2(250f, 48f), new Vector2(300f, 104f), gameAudio, out TextMeshProUGUI secondaryLabel);
+
+            // Same treatment as the upgrade cards: the Slime fonts are wide-spaced, and fake bold smears them.
+            if (cardFont != font)
+                foreach (TextMeshProUGUI t in new[] { body, label, secondaryLabel })
+                {
+                    t.fontStyle = FontStyles.Normal;
+                    t.characterSpacing = PixelFontSpacing;
+                }
 
             var overlay = root.gameObject.AddComponent<RunOverlay>();
             SetRefs(overlay, ("group", group), ("card", card), ("title", title), ("body", body), ("button", button), ("buttonLabel", label),
@@ -1642,12 +1850,22 @@ namespace SliceNServe.EditorTools
                 return paths.OrderBy(p => p, System.StringComparer.Ordinal).FirstOrDefault();
             }
 
+            // From the TTF whenever there is one: GenerateFontAsset keeps a current asset and
+            // replaces an outdated (bitmap / dynamic) one. A ready-made asset only without a TTF.
             TMP_FontAsset font = null;
-            string chosen = Preferred(tmp);
-            if (chosen != null) font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(chosen);
-            else if ((chosen = Preferred(ttf)) != null) font = GenerateFontAsset(chosen);
+            string chosen = Preferred(ttf);
+            if (chosen != null) font = GenerateFontAsset(chosen);
+            else if ((chosen = Preferred(tmp)) != null) font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(chosen);
 
             if (font == null) { Debug.LogWarning($"[Setup] No usable font in {dir}; upgrade cards use the body font."); return fallback; }
+
+            // SDF thins small pixel strokes: a slight dilation keeps them solid in a small Game view.
+            if (font.material != null && font.material.HasProperty("_FaceDilate")
+                && !Mathf.Approximately(font.material.GetFloat("_FaceDilate"), PixelFontDilate))
+            {
+                font.material.SetFloat("_FaceDilate", PixelFontDilate);
+                EditorUtility.SetDirty(font.material);
+            }
 
             if (font.fallbackFontAssetTable == null) font.fallbackFontAssetTable = new System.Collections.Generic.List<TMP_FontAsset>();
             if (fallback != null && !font.fallbackFontAssetTable.Contains(fallback))
@@ -1659,29 +1877,57 @@ namespace SliceNServe.EditorTools
             return font;
         }
 
+        /// <summary>Letter spacing for the Slime pixel fonts, whose advances are drawn wide.</summary>
+        private const float PixelFontSpacing = -4f;
+        private const float PixelFontDilate = 0.15f;
+
+        // The Slime fonts sit on an 8-pixels-per-em grid. Sampled at 64 pt, every font pixel is
+        // exactly 8 atlas pixels, and as SDF the glyphs scale evenly to any size on any screen.
+        private const int PixelFontSamplingSize = 64;
+        private const string PixelFontCharacters =
+            " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+
+        /// <summary>
+        /// A static SDF font asset for a pixel TTF. Not a raster bitmap: a bitmap baked at one size
+        /// is drawn at many (24–42 pt, times the screen's scale), so each font pixel lands on a
+        /// fractional number of screen pixels and strokes come out 1 or 2 pixels wide at random.
+        /// Not dynamic: every character the font has is baked once, so the asset never changes
+        /// while the game runs. An older asset made the other way is replaced.
+        /// </summary>
         private static TMP_FontAsset GenerateFontAsset(string ttfPath)
         {
             string assetPath = Path.ChangeExtension(ttfPath, null) + " SDF.asset";
             var existing = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(assetPath);
-            if (existing != null) return existing;
+            if (existing != null)
+            {
+                bool current = existing.atlasRenderMode == UnityEngine.TextCore.LowLevel.GlyphRenderMode.SDFAA
+                            && existing.atlasPopulationMode == AtlasPopulationMode.Static
+                            && existing.faceInfo.pointSize == PixelFontSamplingSize;
+                if (current) return existing;
+                Debug.Log($"[Setup] Replacing {assetPath}: it was a bitmap/dynamic font asset, which renders unevenly.");
+                AssetDatabase.DeleteAsset(assetPath);
+            }
 
             var source = AssetDatabase.LoadAssetAtPath<UnityEngine.Font>(ttfPath);
             if (source == null) return null;
 
-            // Hinted raster, not SDF: a pixel font wants hard edges. Dynamic, so any glyph used is added.
-            TMP_FontAsset font = TMP_FontAsset.CreateFontAsset(source, 32, 2, UnityEngine.TextCore.LowLevel.GlyphRenderMode.RASTER_HINTED,
-                                                               512, 512, AtlasPopulationMode.Dynamic);
+            TMP_FontAsset font = TMP_FontAsset.CreateFontAsset(source, PixelFontSamplingSize, 8, UnityEngine.TextCore.LowLevel.GlyphRenderMode.SDFAA,
+                                                               1024, 1024, AtlasPopulationMode.Dynamic, enableMultiAtlasSupport: false);
             if (font == null) return null;
 
             font.name = Path.GetFileNameWithoutExtension(assetPath);
             AssetDatabase.CreateAsset(font, assetPath);
             font.atlasTextures[0].name = font.name + " Atlas";
-            font.atlasTextures[0].filterMode = FilterMode.Point;
             AssetDatabase.AddObjectToAsset(font.atlasTextures[0], font);
             font.material.name = font.name + " Material";
             AssetDatabase.AddObjectToAsset(font.material, font);
-            font.TryAddCharacters(" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~");
+
+            if (!font.TryAddCharacters(PixelFontCharacters, out string missing) && !string.IsNullOrEmpty(missing))
+                Debug.Log($"[Setup] {font.name} has no glyph for: {missing} (the body font stands in).");
+            font.atlasPopulationMode = AtlasPopulationMode.Static;   // baked: never rewritten at runtime
+            EditorUtility.SetDirty(font);
             AssetDatabase.SaveAssets();
+            Debug.Log($"[Setup] Generated {assetPath}: SDF, {font.characterTable.Count} characters.");
             return font;
         }
 

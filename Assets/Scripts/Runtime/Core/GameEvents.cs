@@ -11,7 +11,9 @@ namespace SliceNServe.Core
     {
         public readonly int KnifeId;
         public readonly LaunchSource Source;
-        public KnifeLaunched(int knifeId, LaunchSource source) { KnifeId = knifeId; Source = source; }
+        /// <summary>Whose board (§5): 0 in solo play.</summary>
+        public readonly int PlayerId;
+        public KnifeLaunched(int knifeId, LaunchSource source, int playerId = 0) { KnifeId = knifeId; Source = source; PlayerId = playerId; }
     }
 
     /// <summary>The §5 sabotage trigger is "specific bounce combos", so every bounce is published.</summary>
@@ -23,8 +25,9 @@ namespace SliceNServe.Core
 
         /// <summary>Bounces this knife has left from its die roll; negative on the hit that ends it.</summary>
         public readonly int Remaining;
-        public KnifeBounced(int knifeId, int bounceIndex, Vector2 position, int remaining = 0)
-        { KnifeId = knifeId; BounceIndex = bounceIndex; Position = position; Remaining = remaining; }
+        public readonly int PlayerId;
+        public KnifeBounced(int knifeId, int bounceIndex, Vector2 position, int remaining = 0, int playerId = 0)
+        { KnifeId = knifeId; BounceIndex = bounceIndex; Position = position; Remaining = remaining; PlayerId = playerId; }
     }
 
     /// <summary>The die was rolled for the player's next knife: it may bounce off the border this many times.</summary>
@@ -52,8 +55,10 @@ namespace SliceNServe.Core
         public readonly int KnifeId;
         public readonly int BounceIndex;
         public readonly int Combo;
-        public IngredientSliced(IngredientDefinition ingredient, Vector2 position, int knifeId, int bounceIndex, int combo)
-        { Ingredient = ingredient; Position = position; KnifeId = knifeId; BounceIndex = bounceIndex; Combo = combo; }
+        /// <summary>Whose board it was sliced on (§5): routes the credit to that player's orders.</summary>
+        public readonly int PlayerId;
+        public IngredientSliced(IngredientDefinition ingredient, Vector2 position, int knifeId, int bounceIndex, int combo, int playerId = 0)
+        { Ingredient = ingredient; Position = position; KnifeId = knifeId; BounceIndex = bounceIndex; Combo = combo; PlayerId = playerId; }
     }
 
     public readonly struct IngredientWasted
@@ -96,6 +101,14 @@ namespace SliceNServe.Core
         public readonly int OrderId;
         public readonly int Cash;
         public OrderServed(int orderId, int cash) { OrderId = orderId; Cash = cash; }
+    }
+
+    /// <summary>§5: another player served this order first. It leaves this player's line unpaid.</summary>
+    public readonly struct OrderTaken
+    {
+        public readonly int OrderId;
+        public readonly int ByPlayer;
+        public OrderTaken(int orderId, int byPlayer) { OrderId = orderId; ByPlayer = byPlayer; }
     }
 
     public readonly struct OrderExpired

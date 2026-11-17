@@ -48,6 +48,12 @@ namespace SliceNServe.Core
         [Tooltip("HUD switch for auto-throw; shown once it is unlocked.")]
         [SerializeField] private UnityEngine.UI.Button autoToggle;
         [SerializeField] private TMPro.TMP_Text autoLabel;
+        [Tooltip("Enter PvP match: host or join a match on the same network.")]
+        [SerializeField] private PvpLobby pvpLobby;
+        [Tooltip("Play with Friends asks: with a friend on this device, or with the CPU.")]
+        [SerializeField] private VersusChooser versusChooser;
+        [Tooltip("HUD pause button, above the cash and hearts. Esc and losing focus pause too.")]
+        [SerializeField] private UnityEngine.UI.Button pauseButton;
 
         // "Play again" reloads the scene for a clean board; this carries the intent across the
         // load, so the new scene skips the menu. Consumed in Start.
@@ -72,6 +78,13 @@ namespace SliceNServe.Core
 
         private void Start()
         {
+            // A PvP match was asked for: PvpRunner builds it from this scene instead.
+            if (Pvp.MatchSetup.IsPvp)
+            {
+                enabled = false;
+                return;
+            }
+
             _services = bootstrap != null ? bootstrap.Services : ServiceRegistry.Current;
             if (_services == null)
             {
@@ -130,6 +143,8 @@ namespace SliceNServe.Core
             }
             if (settingsPanel != null && _services.Settings != null) settingsPanel.Initialize(_services.Settings);
             if (hudUpgrades != null) hudUpgrades.onClick.AddListener(OpenShopMidRun);
+            if (pvpLobby != null) pvpLobby.Starting += OnPvpStarting;
+            if (pauseButton != null) pauseButton.onClick.AddListener(PauseRun);
 
             ingredients.FillImmediately();
             EnterTitle();
@@ -191,6 +206,8 @@ namespace SliceNServe.Core
             if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
             {
                 if (shop != null && shop.IsOpen) shop.Close();
+                else if (pvpLobby != null && pvpLobby.IsOpen) pvpLobby.Close();
+                else if (versusChooser != null && versusChooser.IsOpen) versusChooser.Close();
                 else if (ordersPanel != null && ordersPanel.IsOpen && State == RunState.Playing) ordersPanel.Close();
                 else if (settingsPanel != null && settingsPanel.IsOpen) settingsPanel.Close();
                 else if (State == RunState.Playing) Pause();
@@ -284,9 +301,23 @@ namespace SliceNServe.Core
             RefreshAutoToggle(State == RunState.Playing || State == RunState.Paused);
         }
 
+        // Three ways to pause: the HUD button, Esc, and the game leaving the screen — the app
+        // going to the background (mobile) or the window losing focus (PC).
         private void OnApplicationPause(bool paused)
         {
             if (paused && State == RunState.Playing) Pause();
+        }
+
+        private void OnApplicationFocus(bool focused)
+        {
+            // Batch mode (tests, builds) has no real window to lose.
+            if (!focused && !Application.isBatchMode && State == RunState.Playing) Pause();
+        }
+
+        /// <summary>The HUD's pause button. Public for tests.</summary>
+        public void PauseRun()
+        {
+            if (State == RunState.Playing) Pause();
         }
 
         private void OnLaunchGesture(Vector2 dragWorld)
@@ -358,7 +389,8 @@ namespace SliceNServe.Core
             if (mainMenu == null) return;
 
             mainMenu.Show(_services.Wallet.Amount, _services.Save.Data.bestServed, AnyUpgradeAffordable(),
-                          StartRun, () => OpenShop(ShowMenu), OpenSettings, QuitGame);
+                          StartRun, () => OpenShop(ShowMenu), OpenSettings, QuitGame, OpenVersusChooser,
+                          pvpLobby != null ? OpenPvpLobby : (System.Action)null);
         }
 
         /// <summary>The menu's Exit. Progress is saved first; in the Editor it stops Play mode.</summary>
@@ -371,6 +403,43 @@ namespace SliceNServe.Core
 #else
             Application.Quit();
 #endif
+        }
+
+        // ------------------------------------------------------------------ §5 PvP entries
+
+        /// <summary>Play with Friends: who with — a friend on this device, or the CPU.</summary>
+        private void OpenVersusChooser()
+        {
+            if (versusChooser == null) { StartFriendsMatch(); return; }
+            versusChooser.Open(StartFriendsMatch, StartCpuMatch, ShowMenu);
+        }
+
+        /// <summary>Two players, one screen. The scene reloads into PvpRunner.</summary>
+        public void StartFriendsMatch()
+        {
+            Pvp.MatchSetup.BeginLocal(System.Environment.TickCount);
+            LoadFresh();
+        }
+
+        /// <summary>You against the auto-player, to try the mode alone.</summary>
+        public void StartCpuMatch()
+        {
+            Pvp.MatchSetup.BeginLocal(System.Environment.TickCount, vsCpu: true);
+            LoadFresh();
+        }
+
+        private void OpenPvpLobby() => pvpLobby.Open(ShowMenu);
+
+        private void OnPvpStarting(Pvp.IMatchTransport transport, bool isHost, int seed, float duration)
+        {
+            Pvp.MatchSetup.BeginOnline(transport, isHost, seed, duration);
+            LoadFresh();
+        }
+
+        private void LoadFresh()
+        {
+            Time.timeScale = 1f;
+            SceneManager.LoadScene(gameObject.scene.buildIndex);
         }
 
         private void OpenSettings()
@@ -463,9 +532,9 @@ namespace SliceNServe.Core
             ShowOverlay(
                 "Kitchen closed!",
                 $"Your reputation ran out.\n\n"
-              + $"Orders served: <b>{_served}</b>  (best {save.bestServed})\n"
-              + $"Cash earned: <b>${_runCash}</b>  ·  In the till: <b>${_services.Wallet.Amount}</b>\n"
-              + $"Best combo: <b>x{_bestCombo}</b>  ·  Order level reached: <b>{_demandLevel + 1}</b>",
+              + $"Orders served: <color=#B5381F>{_served}</color>  (best {save.bestServed})\n"
+              + $"Cash earned: <color=#B5381F>${_runCash}</color>  |  In the till: <color=#B5381F>${_services.Wallet.Amount}</color>\n"
+              + $"Best combo: <color=#B5381F>x{_bestCombo}</color>  |  Order level reached: <color=#B5381F>{_demandLevel + 1}</color>",
                 "Play again",
                 () => Reload(startRun: true),
                 "Main menu",
@@ -500,6 +569,7 @@ namespace SliceNServe.Core
             orderSpawner.Running = live;
             _services.Clock.SetPaused(!live);
             if (hudUpgrades != null) hudUpgrades.gameObject.SetActive(live);
+            if (pauseButton != null) pauseButton.gameObject.SetActive(live);
             if (!live) aimInput.TapMode = false;
             RefreshAutoToggle(live);
         }

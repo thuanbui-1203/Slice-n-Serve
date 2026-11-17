@@ -107,7 +107,7 @@ namespace SliceNServe.Board
             _doorX = _area.xMin + 1.0f;
 
             // A chalkboard on the wall, so the dining room reads as something to tap.
-            var signAt = new Vector2(_area.center.x + 0.3f, _area.yMax - 2.7f);
+            var signAt = new Vector2(_area.center.x + 0.3f, _area.yMax - 3.6f);   // below a chandelier
             var board = new GameObject("SignBoard").transform;
             board.SetParent(transform, false);
             SpriteRenderer frame = Block(board, "Frame", new Color(0.45f, 0.28f, 0.16f), -6);
@@ -121,6 +121,7 @@ namespace SliceNServe.Board
             _events.Subscribe<OrderCreated>(OnCreated);
             _events.Subscribe<OrderServed>(OnServed);
             _events.Subscribe<OrderExpired>(OnExpired);
+            _events.Subscribe<OrderTaken>(OnTaken);
         }
 
         private void OnDestroy()
@@ -129,6 +130,7 @@ namespace SliceNServe.Board
             _events.Unsubscribe<OrderCreated>(OnCreated);
             _events.Unsubscribe<OrderServed>(OnServed);
             _events.Unsubscribe<OrderExpired>(OnExpired);
+            _events.Unsubscribe<OrderTaken>(OnTaken);
         }
 
         // ------------------------------------------------------------------ events
@@ -159,6 +161,9 @@ namespace SliceNServe.Board
         private void OnServed(OrderServed e) => Leave(e.OrderId, happy: true);
 
         private void OnExpired(OrderExpired e) => Leave(e.OrderId, happy: false);
+
+        /// <summary>PvP: served by the rival — the customer still leaves fed.</summary>
+        private void OnTaken(OrderTaken e) => Leave(e.OrderId, happy: true);
 
         private void Leave(int orderId, bool happy)
         {

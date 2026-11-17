@@ -44,9 +44,11 @@ namespace SliceNServe.Board
         [SerializeField] private Sprite door;
         [Tooltip("A chair, then a table.")]
         [SerializeField] private Sprite[] furniture;
-        [Tooltip("Optional: hung from the dining room ceiling in place of the two simple lamps.")]
-        [SerializeField] private Sprite chandelier;
+        [Tooltip("Optional: hung from the dining room ceiling in place of the two simple lamps. "
+               + "More than one sprite plays as an animation (a flickering flame).")]
+        [SerializeField] private Sprite[] chandelierFrames;
         [SerializeField, Min(0.5f)] private float chandelierSize = 2.2f;
+        [SerializeField, Min(1f)] private float chandelierFps = 8f;
         [SerializeField] private Color diningWallColor = new Color(0.78f, 0.62f, 0.5f);
         [SerializeField] private Color wainscotColor = new Color(0.4f, 0.25f, 0.17f);
         [SerializeField] private Color floorColor = new Color(0.5f, 0.33f, 0.2f);
@@ -81,6 +83,7 @@ namespace SliceNServe.Board
 
         private readonly SpriteRenderer[] _glows = new SpriteRenderer[4];
         private int _glowCount;
+        private SpriteRenderer _chandelierView;
         private int _burnerCount, _swingerCount, _sizzlerCount, _chefCount, _steamSourceCount, _nextPuff;
         private float _untilPuff, _flare, _heat = 1f;
         private EventBus _events;
@@ -204,6 +207,7 @@ namespace SliceNServe.Board
 
             // Light from the ceiling, swaying a little: one chandelier if the art is there (its
             // candlelight flickers), otherwise two simple lamps.
+            Sprite chandelier = chandelierFrames != null && chandelierFrames.Length > 0 ? chandelierFrames[0] : null;
             int lights = chandelier != null ? 1 : 2;
             for (int i = 0; i < lights; i++)
             {
@@ -224,6 +228,7 @@ namespace SliceNServe.Board
                     SpriteRenderer c = Prop(chandelier, new Vector2(x, view.yMax - 0.8f), chandelierSize, -7, 0f);
                     c.transform.position += Vector3.down * (c.bounds.max.y - (view.yMax - 0.8f));
                     c.transform.SetParent(hook, true);
+                    _chandelierView = c;
                 }
                 else
                 {
@@ -330,6 +335,9 @@ namespace SliceNServe.Board
                     burner.Flames[f].color = Color.Lerp(new Color(1f, 0.4f, 0.1f), new Color(1f, 0.85f, 0.3f), n);
                 }
             }
+
+            if (_chandelierView != null && chandelierFrames.Length > 1)
+                _chandelierView.sprite = chandelierFrames[Mathf.FloorToInt(t * chandelierFps) % chandelierFrames.Length];
 
             // Candlelight: the dining room's glow breathes a little.
             for (int i = 0; i < _glowCount; i++)

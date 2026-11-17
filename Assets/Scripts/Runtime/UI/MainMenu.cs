@@ -18,11 +18,14 @@ namespace SliceNServe.UI
         [SerializeField] private Button upgrade;
         [SerializeField] private Button settings;
         [SerializeField] private Button exit;
+        [Tooltip("§5: Play with Friends (same device) and Enter PvP match (online).")]
+        [SerializeField] private Button friends;
+        [SerializeField] private Button pvp;
         [SerializeField] private TMP_Text till;
         [SerializeField] private TMP_Text best;
         [SerializeField] private GameObject upgradeBadge;
 
-        private Action _onPlay, _onUpgrade, _onSettings, _onExit;
+        private Action _onPlay, _onUpgrade, _onSettings, _onExit, _onFriends, _onPvp;
         private Vector2 _logoHome;
         private bool _visible;
         private float _t;
@@ -34,6 +37,8 @@ namespace SliceNServe.UI
             play.onClick.AddListener(() => Choose(_onPlay));
             upgrade.onClick.AddListener(() => Choose(_onUpgrade));
             settings.onClick.AddListener(() => Choose(_onSettings));
+            if (friends != null) friends.onClick.AddListener(() => Choose(_onFriends));
+            if (pvp != null) pvp.onClick.AddListener(() => Choose(_onPvp));
             if (exit != null)
             {
                 exit.onClick.AddListener(() => Choose(_onExit));
@@ -45,8 +50,12 @@ namespace SliceNServe.UI
 
         /// <summary>Shows the menu. <paramref name="upgradeAffordable"/> lights the badge on Upgrade.</summary>
         public void Show(int cash, int bestServed, bool upgradeAffordable, Action onPlay, Action onUpgrade, Action onSettings,
-                         Action onExit = null)
+                         Action onExit = null, Action onFriends = null, Action onPvp = null)
         {
+            _onFriends = onFriends;
+            _onPvp = onPvp;
+            if (friends != null) friends.gameObject.SetActive(onFriends != null);
+            if (pvp != null) pvp.gameObject.SetActive(onPvp != null);
             _onPlay = onPlay;
             _onUpgrade = onUpgrade;
             _onSettings = onSettings;

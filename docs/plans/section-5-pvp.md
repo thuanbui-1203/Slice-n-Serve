@@ -1,6 +1,6 @@
 # §5 PvP — design and groundwork
 
-Status: **groundwork only** (2026-11-17). No PvP gameplay exists yet. This document is the plan;
+Status: **v1 playable** (2026-11-17) — see "Implemented (v1)" below. This document is the plan;
 `docs/concept.md` §5 is the source of truth for what PvP *is*.
 
 ## What the concept asks for
@@ -85,3 +85,39 @@ belongs to one player (`AimInput` gains a screen region); on PC, a second input 
 - Reputation: shared, per player, or per team in 2v2? What ends a match — a timer, or reputation?
 - Does the upgrade shop apply in PvP (progression vs. fairness)? Likely: PvP uses a fixed loadout.
 - PC same-device input scheme (second player on keyboard or gamepad?).
+
+## Implemented (v1, 2026-11-17)
+
+Defaults chosen for the open questions (change them in `PvpRunner` / `PvpLayout` / `MatchSetup`):
+1v1 only; a **3-minute** match; score = cash from orders you served first; no reputation and no
+game over; **base stats for everyone** (no upgrades, auto-throw or sous-chefs); no rush hour;
+PvP never touches the solo save or wallet.
+
+- **Menu:** "Play with Friends" and "Enter PvP match" under Play.
+- **Play with Friends** — `PvpRunner` clones the board rig *and the customer spawner* for player 2, so each player serves their own customers (changed 2026-11-17 at the user's request; online stays one shared line); two boards side by side
+  (`PvpLayout.Half`), a ticket strip over each, the scoreboard between. Controls: mouse or touch on
+  your own half (two fingers at once on touch screens), or keys — P1 WASD + Space, P2 arrows + Enter.
+  Esc leaves; the results card offers a rematch.
+- **Enter PvP match** — LAN: one device hosts (shows its address), the other joins by that address
+  (`TcpMatchTransport`, port 7777). Each plays on a solo-style board with the dining room and orders
+  panel; the host runs the customer line and referees serves (`OnlineSync`). Both sides must be on
+  the same network, and the host's firewall must allow the game on port 7777.
+- **Shared rules:** `SharedOrderQueue` (same customers in every line, first serve withdraws it from
+  the others → `OrderTaken`), `PvpMatch` (clock, scores, winner). `PlayerId` is now on knife and
+  slice events.
+- Tests: `PvpTests` (EditMode: shared line, match, online refereeing over a loopback, a real TCP
+  connection on localhost) and `PvpSceneTests` (PlayMode: two boards, routing, first serve, the clock).
+
+Still open: 2v2; internet matchmaking (a relay, e.g. Unity Relay + Lobby); sabotage; a rematch
+online; whether PvP should pay into the solo wallet.
+
+## Update (2026-11-17, later)
+
+- **Matchmaking, no address:** the lobby is a single *Find match* button (`LanMatchmaker`). Each
+  searching game listens for a UDP beacon (port 47778) for 1-2.5 s; if it hears one it joins that game,
+  otherwise it hosts (TCP 7777+, first free port) and broadcasts beacons until someone joins. Two games
+  that both start hosting settle it by ticket: the higher one gives way and joins. LAN only — matching
+  over the internet needs a relay (Unity Lobby + Relay, which needs the project linked to Unity Cloud).
+- **Play with CPU:** *Play with Friends* now asks *A friend* or *The CPU* (`VersusChooser`). The CPU is
+  player 2 driven by the auto-throw system (`CpuPlayer` = `AutoThrower` + serving its ready orders
+  after a 0.8-2.2 s reaction). It takes no input; you can aim from anywhere on the screen.

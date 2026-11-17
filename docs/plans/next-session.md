@@ -16,6 +16,15 @@
 - **PvP groundwork** — `GameRandom` seeded service; design in `section-5-pvp.md`.
 - Tests: EditMode 75/75, PlayMode 24 + 5 explicit skips, on the verify copy.
 
+## Done (2026-11-17, later)
+- Pause / Kitchen closed cards use the upgrade cards' font (Sol Schori) for text and buttons.
+- Chandelier: no free animated one exists; [Medieval Street Lamps](https://mirquiso.itch.io/medieval-street-lamps)
+  ($1, animated flame) is the best match. Any sheet in `Assets/Art/Chandelier` now animates (a row of
+  3+ square frames, or a sheet already sliced into several sprites); a single image sways.
+- SFX list to replace: `docs/plans/sfx-todo.md`.
+- Dev buttons (add money / reset) in the detachable `Assets/Scripts/DevTools`.
+- **PvP v1** — see `section-5-pvp.md` "Implemented (v1)".
+
 ## Next
 - User: run Build Everything; download the chandelier/dice packs if wanted, then rebuild.
 - If a downloaded dice pack's layout isn't picked up (needs 6 faces in order), adjust `BuildDice`.

@@ -96,11 +96,23 @@ spawns an ingredient instead (rate-limited, never past the working maximum). Dic
 generated placeholders in `Assets/Art/Placeholders/Dice`; a pack in `Assets/Art/Dice` (six faces in
 one row or six files, plus an optional `*roll*` strip) replaces them. A PNG in
 `Assets/Art/Chandelier` replaces the dining room's lamps. Gameplay randomness goes through the
-seeded `GameRandom` service — groundwork for PvP (`docs/plans/section-5-pvp.md`).
+seeded `GameRandom` service.
+
+**PvP (§5, v1).** Two menu entries under Play. *Play with Friends*: two boards side by side on one
+screen, each with their own customers — whoever earns more wins. Online, the two players share
+one line of customers: first to serve an order gets its cash. Mouse or touch on your own half, or P1 WASD + Space / P2 arrows + Enter.
+*Play with Friends* asks first: a friend on the same screen, or the CPU (player 2 played by the
+auto-throw system, which also serves its own orders). *Enter PvP match*: press Find match on two
+devices on the same network and they pair up automatically. Matches last 3 minutes, use base stats (no upgrades), and the higher cash wins.
+Details and the open decisions: `docs/plans/section-5-pvp.md`.
 
 - **Setup is code.** `Slice & Serve → Setup → 2. Build Everything` (`Assets/Scripts/Editor/ProjectSetup.cs`)
   regenerates layers, physics, player settings, data assets, prefabs and `Game.unity`. Change the
   script and re-run it rather than hand-editing the generated scene.
+- **Dev buttons:** bottom-left, "DEV +$1000" and "DEV Reset" (tap twice). They live in their own
+  assembly, `Assets/Scripts/DevTools`, which no game code references; Build Everything adds them only
+  if that folder exists, and a release (non-development) build removes them at start. To detach:
+  delete the `DevCheats` object from the scene, or the folder, and rebuild.
 - **Builds:** `Slice & Serve → Build → Windows x64` / `Android (ARM64 APK)`, output in `Builds/`.
 - **Tests:** EditMode (logic) and PlayMode (physics, input parity, the loop) — run them from the
   Test Runner. `AspectSnapshots` is explicit: it renders the scene at 16:9, 16:10, 20:9, 4:3 and 32:9

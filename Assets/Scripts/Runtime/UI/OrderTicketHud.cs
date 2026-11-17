@@ -65,10 +65,12 @@ namespace SliceNServe.UI
             _events.Subscribe<OrderProgressed>(OnProgressed);
             _events.Subscribe<OrderServed>(OnServed);
             _events.Subscribe<OrderExpired>(OnExpired);
+            _events.Subscribe<OrderTaken>(OnTaken);
             _events.Subscribe<KnifeLaunched>(OnLaunched);
 
-            cash.Initialize(wallet);
-            reputation.Initialize(events, startReputation);
+            // A PvP ticket strip has no cash or hearts of its own.
+            if (cash != null && wallet != null) cash.Initialize(wallet);
+            if (reputation != null) reputation.Initialize(events, startReputation);
 
             for (int i = 0; i < FlyerCount; i++)
             {
@@ -111,6 +113,7 @@ namespace SliceNServe.UI
             _events.Unsubscribe<OrderProgressed>(OnProgressed);
             _events.Unsubscribe<OrderServed>(OnServed);
             _events.Unsubscribe<OrderExpired>(OnExpired);
+            _events.Unsubscribe<OrderTaken>(OnTaken);
             _events.Unsubscribe<KnifeLaunched>(OnLaunched);
         }
 
@@ -153,6 +156,9 @@ namespace SliceNServe.UI
 
         private void OnExpired(OrderExpired e) => FindTicket(e.OrderId)?.Close(served: false);
 
+        /// <summary>PvP: the other player served it first.</summary>
+        private void OnTaken(OrderTaken e) => FindTicket(e.OrderId)?.Close(served: false);
+
         private void OnLaunched(KnifeLaunched e) => _hintDismissed |= e.Source == LaunchSource.Manual;
 
         private OrderTicketView FindTicket(int orderId)
@@ -162,6 +168,9 @@ namespace SliceNServe.UI
 
             return null;
         }
+
+        /// <summary>Where the tickets sit (a press there is a ticket tap, never a throw).</summary>
+        public RectTransform Container => container;
 
         /// <summary>For tests and the runner: the live ticket for an order, or null.</summary>
         public OrderTicketView Ticket(int orderId) => FindTicket(orderId);
@@ -190,7 +199,7 @@ namespace SliceNServe.UI
             float neededW = columns >= 1000 ? cols * cell.x + (cols - 1) * spacing.x : columns * cell.x + (columns - 1) * spacing.x;
             float neededH = rows * cell.y + (rows - 1) * spacing.y;
             Rect space = container.rect;
-            float target = Mathf.Min(1f, space.width / neededW, columns >= 1000 ? 1f : space.height / neededH);
+            float target = Mathf.Min(1f, space.width / neededW, space.height / neededH);
 
             float scale = Mathf.MoveTowards(container.localScale.x, target, dt * 2.5f);
             container.localScale = new Vector3(scale, scale, 1f);
