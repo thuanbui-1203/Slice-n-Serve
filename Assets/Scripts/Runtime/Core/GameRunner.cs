@@ -28,6 +28,10 @@ namespace SliceNServe.Core
         [SerializeField] private OrderSpawner orderSpawner;
         [SerializeField] private BoardFx boardFx;
         [SerializeField] private KitchenDecor kitchen;
+        [Tooltip("The customers in the dining room. Tapping them opens the orders panel.")]
+        [SerializeField] private CustomerLine customers;
+        [Tooltip("The die beside the launcher: shows each roll, and counts the knife's bounces down.")]
+        [SerializeField] private DiceView dice;
 
         [Header("Presentation (optional — the run works without it)")]
         [SerializeField] private OrderTicketHud hud;
@@ -39,6 +43,11 @@ namespace SliceNServe.Core
         [Tooltip("The HUD's Upgrades button: opens the shop mid-run, with the run paused behind it.")]
         [SerializeField] private UnityEngine.UI.Button hudUpgrades;
         [SerializeField] private HudBanner banner;
+        [Tooltip("Slides in over the dining room: tap a ready order there to serve it.")]
+        [SerializeField] private OrdersPanel ordersPanel;
+        [Tooltip("HUD switch for auto-throw; shown once it is unlocked.")]
+        [SerializeField] private UnityEngine.UI.Button autoToggle;
+        [SerializeField] private TMPro.TMP_Text autoLabel;
 
         // "Play again" reloads the scene for a clean board; this carries the intent across the
         // load, so the new scene skips the menu. Consumed in Start.
@@ -52,6 +61,10 @@ namespace SliceNServe.Core
         private int _served;
         private int _expired;
         private int _bestCombo;
+        private int _readyHints;
+        private AutoThrower _auto;
+        private bool _playerKnifeWasLive;
+        private float _lastRestock = -1f;
 
         public RunState State { get; private set; } = RunState.Title;
         public IOrderQueue Queue { get; private set; }
@@ -70,26 +83,38 @@ namespace SliceNServe.Core
             RuntimeTuning tuning = _services.Tuning;
             EventBus events = _services.Events;
 
+            GameRandom random = _services.Random ?? new GameRandom();
             bounds.Initialize(tuning.Config);
-            ingredients.Initialize(tuning, events);
-            knives.Initialize(tuning, events, bounds, ingredients);
+            ingredients.Initialize(tuning, events, random);
+            knives.Initialize(tuning, events, bounds, ingredients, random);
 
             aimInput.Initialize(tuning);
             trajectoryPreview.Initialize(aimInput, tuning, knives);
             aimInput.OnLaunch += OnLaunchGesture;
+            aimInput.OnTap += OnRestockTap;
 
             Queue = new LocalOrderQueue(events, tuning);
             Reputation = new ReputationService(events, tuning);
             _difficulty = new TimeRampDifficultyProvider(_services.Clock, tuning.Config);
-            orderSpawner.Initialize(Queue, _services.Clock, tuning, _difficulty, ingredients);
+            orderSpawner.Initialize(Queue, _services.Clock, tuning, _difficulty, ingredients, random);
             _crew = new SousChefCrew(tuning, knives, ingredients, Queue);
+            _auto = new AutoThrower(tuning, knives, random);
 
             // The loop: slices feed orders, orders pay or cost reputation, reputation ends the run.
             events.Subscribe<IngredientSliced>(OnSliced);
             events.Subscribe<OrderServed>(OnServed);
             events.Subscribe<OrderExpired>(OnExpired);
+            events.Subscribe<OrderReady>(OnReady);
+            events.Subscribe<KnifeBounced>(OnBounced);
             events.Subscribe<GameOver>(OnGameOver);
+            if (_services.Upgrades != null) _services.Upgrades.Purchased += OnPurchased;
+            if (autoToggle != null) autoToggle.onClick.AddListener(ToggleAutoThrow);
 
+            if (customers != null)
+            {
+                customers.Initialize(tuning, events, Queue);
+                aimInput.PressFilter = OnPressCustomers;
+            }
             if (boardFx != null) boardFx.Initialize(events);
             if (kitchen != null) kitchen.Initialize(tuning.Config, events);
             if (gameAudio != null)
@@ -119,13 +144,20 @@ namespace SliceNServe.Core
         private void OnDestroy()
         {
             Time.timeScale = 1f;
-            if (aimInput != null) aimInput.OnLaunch -= OnLaunchGesture;
+            if (aimInput != null)
+            {
+                aimInput.OnLaunch -= OnLaunchGesture;
+                aimInput.OnTap -= OnRestockTap;
+            }
             if (_services == null) return;
+            if (_services.Upgrades != null) _services.Upgrades.Purchased -= OnPurchased;
 
             EventBus events = _services.Events;
             events.Unsubscribe<IngredientSliced>(OnSliced);
             events.Unsubscribe<OrderServed>(OnServed);
             events.Unsubscribe<OrderExpired>(OnExpired);
+            events.Unsubscribe<OrderReady>(OnReady);
+            events.Unsubscribe<KnifeBounced>(OnBounced);
             events.Unsubscribe<GameOver>(OnGameOver);
         }
 
@@ -136,7 +168,20 @@ namespace SliceNServe.Core
             _services.Clock.Advance();
             if (State == RunState.Playing)
             {
-                _crew.Tick(_services.Clock.DeltaTime);
+                float dt = _services.Clock.DeltaTime;
+
+                // Each throw ends -> the die rolls for the next one.
+                bool knifeLive = knives.PlayerKnifeLive;
+                if (_playerKnifeWasLive && !knifeLive) RollDie();
+                _playerKnifeWasLive = knifeLive;
+
+                bool auto = AutoThrowActive;
+                if (auto && !aimInput.TapMode) aimInput.CancelDrag();
+                aimInput.TapMode = auto;
+                _auto.Enabled = auto;
+                _auto.Tick(dt, dice == null || !dice.IsRolling);
+
+                _crew.Tick(dt);
                 UpdateRunEvents();
             }
 
@@ -146,6 +191,7 @@ namespace SliceNServe.Core
             if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
             {
                 if (shop != null && shop.IsOpen) shop.Close();
+                else if (ordersPanel != null && ordersPanel.IsOpen && State == RunState.Playing) ordersPanel.Close();
                 else if (settingsPanel != null && settingsPanel.IsOpen) settingsPanel.Close();
                 else if (State == RunState.Playing) Pause();
                 else if (State == RunState.Paused) Resume();
@@ -180,6 +226,64 @@ namespace SliceNServe.Core
             }
         }
 
+        // ------------------------------------------------------------------ dice and auto-throw
+
+        /// <summary>Auto-throw is unlocked (Knife Speed and Split Chance maxed) and switched on.</summary>
+        public bool AutoThrowActive
+            => _services.Upgrades != null && _services.Upgrades.AutoThrowUnlocked
+            && (_services.Settings == null || _services.Settings.AutoThrow);
+
+        /// <summary>The die decides how many times the next knife may bounce off the border.</summary>
+        private void RollDie()
+        {
+            int roll = _services.Random.RollDie();
+            knives.BounceBudget = roll;
+            if (dice != null) dice.Roll(roll);
+            _services.Events.Publish(new DiceRolled(roll));
+        }
+
+        /// <summary>The die counts the player's knife's bounces down as it flies.</summary>
+        private void OnBounced(KnifeBounced e)
+        {
+            KnifeController mine = knives.PlayerKnife;
+            if (dice != null && mine != null && mine.KnifeId == e.KnifeId) dice.ShowRemaining(e.Remaining);
+        }
+
+        /// <summary>With auto-throw on, tapping the board brings out another ingredient (rate-limited).</summary>
+        private void OnRestockTap(Vector2 world)
+        {
+            if (State != RunState.Playing) return;
+            float now = _services.Clock.Elapsed;
+            if (_lastRestock >= 0f && now - _lastRestock < _services.Tuning.Config.restockTapCooldown) return;
+
+            _lastRestock = now;
+            ingredients.SpawnNear(world);
+        }
+
+        public void ToggleAutoThrow()
+        {
+            if (_services.Settings == null) return;
+            _services.Settings.AutoThrow = !_services.Settings.AutoThrow;
+            _services.Settings.Save();
+            RefreshAutoToggle(State == RunState.Playing);
+        }
+
+        private void RefreshAutoToggle(bool live)
+        {
+            if (autoToggle == null) return;
+            bool unlocked = _services.Upgrades != null && _services.Upgrades.AutoThrowUnlocked;
+            autoToggle.gameObject.SetActive(live && unlocked);
+            if (autoLabel != null) autoLabel.SetText(AutoThrowActive ? "Auto: ON" : "Auto: OFF");
+        }
+
+        private void OnPurchased(Data.UpgradeDefinition upgrade)
+        {
+            bool unlocked = _services.Upgrades.AutoThrowUnlocked;
+            if (unlocked && banner != null && (upgrade.Kind == Data.UpgradeKind.KnifeSpeed || upgrade.Kind == Data.UpgradeKind.SplitChance))
+                banner.Notify("Auto-throw unlocked!  The knife throws itself - tap the board for ingredients", 4f);
+            RefreshAutoToggle(State == RunState.Playing || State == RunState.Paused);
+        }
+
         private void OnApplicationPause(bool paused)
         {
             if (paused && State == RunState.Playing) Pause();
@@ -204,6 +308,28 @@ namespace SliceNServe.Core
             _services.Wallet.Add(e.Cash);
         }
 
+        /// <summary>A press in the dining room opens (or closes) the orders panel instead of aiming.</summary>
+        private bool OnPressCustomers(Vector2 world)
+        {
+            if (State != RunState.Playing || !customers.Area.Contains(world)) return false;
+            ToggleOrders();
+            return true;
+        }
+
+        /// <summary>Opens or closes the orders panel. Public for tests.</summary>
+        public void ToggleOrders()
+        {
+            if (ordersPanel != null && State == RunState.Playing) ordersPanel.Toggle();
+        }
+
+        /// <summary>Orders are served by hand now: the first couple of times, say so.</summary>
+        private void OnReady(OrderReady e)
+        {
+            if (banner == null || _readyHints >= 2 || (ordersPanel != null && ordersPanel.IsOpen)) return;
+            _readyHints++;
+            banner.Notify("Order ready!  Tap the customers to serve it", 3f);
+        }
+
         private void OnExpired(OrderExpired e)
         {
             _expired++;
@@ -216,6 +342,7 @@ namespace SliceNServe.Core
         {
             State = RunState.Title;
             SetLive(false);
+            if (ordersPanel != null) ordersPanel.Close(instant: true);
             ShowMenu();
 
             if (mainMenu == null)
@@ -270,6 +397,7 @@ namespace SliceNServe.Core
             if (overlay != null) overlay.Hide();
             State = RunState.Playing;
             SetLive(true);
+            RollDie();   // the first knife's bounces
         }
 
         private void Pause()
@@ -317,6 +445,7 @@ namespace SliceNServe.Core
             aimInput.CancelDrag();
             SetLive(false);
             knives.ReturnAllKnives();
+            if (ordersPanel != null) ordersPanel.Close(instant: true);
             if (banner != null) banner.SetRush(false, 0, 1f);
 
             // End of run is the main save checkpoint: the cash is banked for the shop.
@@ -371,6 +500,8 @@ namespace SliceNServe.Core
             orderSpawner.Running = live;
             _services.Clock.SetPaused(!live);
             if (hudUpgrades != null) hudUpgrades.gameObject.SetActive(live);
+            if (!live) aimInput.TapMode = false;
+            RefreshAutoToggle(live);
         }
     }
 }

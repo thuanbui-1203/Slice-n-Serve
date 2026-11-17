@@ -46,6 +46,16 @@ namespace SliceNServe.Board
 
         public event Action<Vector2> OnLaunch;
 
+        /// <summary>Claims a press before it can start a throw: given the press's world position,
+        /// returns true if it was used (a tap on the customers opens the orders panel).</summary>
+        public Func<Vector2, bool> PressFilter { get; set; }
+
+        /// <summary>Auto-throw mode: a press on the board is a tap (<see cref="OnTap"/>, in world
+        /// units), never the start of a throw.</summary>
+        public bool TapMode { get; set; }
+
+        public event Action<Vector2> OnTap;
+
         public void Initialize(RuntimeTuning tuning)
         {
             _tuning = tuning;
@@ -82,6 +92,12 @@ namespace SliceNServe.Board
             Vector2 screen = ReadScreenPosition();
             if (boardCamera != null && !boardCamera.pixelRect.Contains(screen)) return;
             if (OverBlocker(screen)) return;
+            if (PressFilter != null && PressFilter(ScreenToWorld(screen))) return;
+            if (TapMode)
+            {
+                OnTap?.Invoke(ScreenToWorld(screen));
+                return;
+            }
 
             _dragStartScreen = screen;
             _dragging = true;

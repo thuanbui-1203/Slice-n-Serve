@@ -70,10 +70,33 @@ with flickering burners, sizzling pans, steam, and swinging tools that flare up 
 order and during a rush. Two chefs chop on the line and cheer when an order is served; they, the
 boiling pot, the meats and the brick wall come from Riley's CC0
 [Restaurant Character and Tileset](https://rkuhlf-assets.itch.io/restaurant-pixel-art)
-(`Assets/Art/Spritesheets`, re-sliced by the setup script). The upgrade cards use a pixel font from
-`Assets/Art/SlimeFonts/` when one is there. Sous-chefs throw only
+(`Assets/Art/Spritesheets`, re-sliced by the setup script). The upgrade cards use Sol Schori from Slime's
+Pixel Font Pack (any `Assets/Art` folder with "slime" in its name) when it is there. Sous-chefs throw only
 alongside the player: they follow each throw, and their knives are recalled when the player's lands.
 All of it is tunable in `BoardConfig` (Difficulty ramp, Demand growth, Rush hour).
+
+**Customers and serving by hand.** The board sits right of centre; the left of the screen is a
+dining room (`CustomerLine`) where a customer walks in through the door for every order, queues
+toward the counter with a speech bubble of what is still missing, and walks out happy or angry.
+Finished orders are **not** served automatically: they turn green ("Serve!") and wait — with their
+patience still running — until the player taps the dining room to slide out the orders panel
+(`OrdersPanel`) and taps each green ticket to hand it over and get paid. During a rush, a ready
+order steps aside so the next customer in line is fed. The walk cycles are generated placeholders
+in `Assets/Art/Placeholders/Customers`; drop a pack of side-view walk strips (one row of square
+frames per PNG, facing right, optional `<name>_idle.png`) into `Assets/Art/Customers` and re-run
+Build Everything to use it instead.
+
+**The die and auto-throw.** Every throw starts with a die roll (the die beside the launcher):
+the knife may bounce off the border that many times (1–6), and the next border hit ends it. Knives
+no longer lose speed on a bounce (`bounceRetention` = 1). Split knives keep what their parent has
+left; sous-chef knives get the player's roll. Once Knife Speed and Split Chance are both maxed,
+**auto-throw** unlocks (HUD switch, remembered in PlayerPrefs): whenever the knife is idle the die
+rolls and the knife throws itself in a random upward direction at full speed, and tapping the board
+spawns an ingredient instead (rate-limited, never past the working maximum). Dice faces are
+generated placeholders in `Assets/Art/Placeholders/Dice`; a pack in `Assets/Art/Dice` (six faces in
+one row or six files, plus an optional `*roll*` strip) replaces them. A PNG in
+`Assets/Art/Chandelier` replaces the dining room's lamps. Gameplay randomness goes through the
+seeded `GameRandom` service — groundwork for PvP (`docs/plans/section-5-pvp.md`).
 
 - **Setup is code.** `Slice & Serve → Setup → 2. Build Everything` (`Assets/Scripts/Editor/ProjectSetup.cs`)
   regenerates layers, physics, player settings, data assets, prefabs and `Game.unity`. Change the

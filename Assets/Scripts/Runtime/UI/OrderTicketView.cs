@@ -9,7 +9,8 @@ namespace SliceNServe.UI
     /// <summary>
     /// One order ticket: customer portrait (its mood follows patience), dish, an ingredient
     /// checklist with fulfilled/required counts, and the patience bar. Bound to an
-    /// <see cref="OrderInstance"/> it only reads.
+    /// <see cref="OrderInstance"/> it only reads. Once every ingredient is in, it lights up as
+    /// ready, and tapping it asks to serve the order.
     /// </summary>
     public sealed class OrderTicketView : MonoBehaviour
     {
@@ -34,20 +35,28 @@ namespace SliceNServe.UI
         [SerializeField] private Image dishIcon;
         [SerializeField] private LineSlot[] lines;
         [SerializeField] private PatienceBar patience;
+        [SerializeField] private Button button;
+        [Tooltip("Shown over the checklist once the order is complete.")]
+        [SerializeField] private GameObject readyBanner;
 
         private OrderInstance _order;
         private float _age;
         private float _closingAge = -1f;
         private bool _served;
+        private float _nudge;
+        private Action<int> _serve;
 
         public int OrderId => _order != null ? _order.OrderId : 0;
         public bool IsClosing => _closingAge >= 0f;
         public bool IsFinished => _closingAge >= CloseSeconds;
 
-        public void Bind(OrderInstance order)
+        /// <param name="serve">Called with the order id when a ready ticket is tapped.</param>
+        public void Bind(OrderInstance order, Action<int> serve = null)
         {
             _order = order;
+            _serve = serve;
             _age = 0f;
+            if (button != null) button.onClick.AddListener(OnTapped);
 
             dishName.SetText(order.Dish.DisplayName);
             dishIcon.sprite = order.Dish.Sprite;
@@ -66,6 +75,16 @@ namespace SliceNServe.UI
             flash.color = Color.clear;
             Refresh();
         }
+
+        /// <summary>A ready ticket is served; one still cooking shakes its head.</summary>
+        public void OnTapped()
+        {
+            if (_order == null || IsClosing) return;
+            if (_order.IsReady) _serve?.Invoke(_order.OrderId);
+            else _nudge = 1f;
+        }
+
+        public bool IsReady => _order != null && _order.IsReady && !IsClosing;
 
         /// <summary>The ingredient icon a credit for this line should fly to, or null.</summary>
         public RectTransform LineTarget(string ingredientId)
@@ -113,6 +132,7 @@ namespace SliceNServe.UI
             if (_order == null) return;
 
             patience.SetFrom(_order);
+            if (readyBanner != null) readyBanner.SetActive(_order.IsReady && !IsClosing);
 
             Sprite[] moods = _order.Customer.SpriteSet;
             if (moods == null || moods.Length == 0) return;
@@ -144,7 +164,10 @@ namespace SliceNServe.UI
             {
                 float t = Mathf.Clamp01(_age / AppearSeconds);
                 float ease = 1f - (1f - t) * (1f - t);
-                body.localScale = Vector3.one * Mathf.Lerp(0.6f, 1f, ease) * (1f + Mathf.Sin(t * Mathf.PI) * 0.08f);
+                float ready = IsReady ? 1f + 0.035f * Mathf.Sin(_age * 7f) : 1f;
+                body.localScale = Vector3.one * Mathf.Lerp(0.6f, 1f, ease) * (1f + Mathf.Sin(t * Mathf.PI) * 0.08f) * ready;
+                _nudge = Mathf.MoveTowards(_nudge, 0f, dt * 3f);
+                body.anchoredPosition = new Vector2(Mathf.Sin(_age * 55f) * 9f * _nudge, 0f);
                 group.alpha = ease;
                 return;
             }

@@ -16,18 +16,19 @@ namespace SliceNServe.Data
                + "between this and the play area.")]
         public Rect viewBounds = new Rect(-9.6f, -5.4f, 19.2f, 10.8f);
 
-        [Tooltip("Play area in world units: the walls sit on it. Smaller than the view, so the "
-               + "cooking line runs along the bottom and shelves line the sides. The top edge stays "
+        [Tooltip("Play area in world units: the walls sit on it. Smaller than the view: the "
+               + "dining room (where customers queue) fills the left, the cooking line runs along the bottom "
+               + "and shelves line the right side. The top edge stays "
                + "at the view's, under the order tickets.")]
-        public Rect worldBounds = new Rect(-8.0f, -3.8f, 16.0f, 9.2f);
+        public Rect worldBounds = new Rect(-3.0f, -3.8f, 11.0f, 9.2f);
 
         [Tooltip("Where a new knife starts. Must keep ~1 u of clearance to the nearest wall (§5.6).")]
-        public Vector2 launcherPosition = new Vector2(0f, -2.8f);
+        public Vector2 launcherPosition = new Vector2(2.5f, -2.8f);
 
         [Tooltip("Where ingredients may spawn: the board minus edge margins, minus a reserved "
                + "launch corridor at the bottom and a matching band at the top, which the order "
                + "tickets sit over at 16:9.")]
-        public Rect ingredientZone = new Rect(-7.5f, -1.8f, 15.0f, 5.1f);
+        public Rect ingredientZone = new Rect(-2.5f, -1.8f, 10.0f, 5.1f);
 
         [Header("Knife (plan §5.2, §5.3)")]
         [Tooltip("Board units of drag that produce full power. Independently of pixels, so mouse "
@@ -47,8 +48,9 @@ namespace SliceNServe.Data
         [Tooltip("Below this the knife is spent and returns to the launcher.")]
         [Min(0f)] public float minLiveSpeed = 3f;
 
-        [Tooltip("Speed kept after each wall bounce.")]
-        [Range(0.5f, 1f)] public float bounceRetention = 0.9f;
+        [Tooltip("Speed kept after each wall bounce. 1 = no friction: since the die decides how many "
+               + "bounces a knife gets, knives no longer slow down.")]
+        [Range(0.5f, 1f)] public float bounceRetention = 1f;
 
         [Min(1f)] public float maxKnifeLifetime = 15f;
         [Min(1)] public int maxKnifeBounces = 60;
@@ -121,6 +123,12 @@ namespace SliceNServe.Data
 
         [Tooltip("§1 budget: the frame-rate ceiling on live ingredients, whatever the density upgrade says.")]
         [Min(1)] public int ingredientCeiling = 120;
+
+        [Header("Dice and auto-throw")]
+        [Tooltip("After the die lands, the auto-throw waits this long before throwing, so the roll reads.")]
+        [Min(0f)] public float autoThrowPause = 0.35f;
+        [Tooltip("With auto-throw on, tapping the board spawns an ingredient: at most one per this many seconds.")]
+        [Min(0.02f)] public float restockTapCooldown = 0.12f;
 
         [Header("Scaling seams (§3, §4)")]
         [Min(0f)] public float cashMultiplier = 1f;

@@ -16,7 +16,7 @@ hand in the Unity Editor; they are not applied automatically.
 | **02** | §2 Core Mechanics (2.1 board, 2.2 orders & patience) | [`section-2-core-mechanics.md`](./section-2-core-mechanics.md) | [`section-2-implementation-steps.md`](./section-2-implementation-steps.md) |
 | 03 | §3 Economy & Upgrades | — not scheduled — | — |
 | 04 | §4 Difficulty Scaling | — not scheduled — | — |
-| 05 | §5 Multiplayer (PvP) | — not scheduled — | — |
+| 05 | §5 Multiplayer (PvP) | [`section-5-pvp.md`](section-5-pvp.md) — design + groundwork | — |
 | 06 | §6 Future Updates Roadmap | — not scheduled — | — |
 
 **Conventions**

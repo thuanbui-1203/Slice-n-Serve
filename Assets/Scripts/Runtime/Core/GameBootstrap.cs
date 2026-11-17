@@ -34,6 +34,7 @@ namespace SliceNServe.Core
             Services.Save = save;
             Services.Upgrades = new UpgradeService(upgrades ?? new UpgradeDefinition[0], save, wallet, tuning);
             Services.Settings = new GameSettings();
+            Services.Random = new GameRandom();   // a PvP match will reseed it from the match seed
 
             // O3 is still open; this is the 60 FPS floor, which mobile does not default to.
             Application.targetFrameRate = 60;

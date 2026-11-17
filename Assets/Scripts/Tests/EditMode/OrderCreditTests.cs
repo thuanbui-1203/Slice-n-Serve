@@ -16,6 +16,7 @@ namespace SliceNServe.Tests
         private CustomerDefinition _customer;
         private readonly List<OrderServed> _served = new List<OrderServed>();
         private readonly List<IngredientWasted> _wasted = new List<IngredientWasted>();
+        private readonly List<OrderReady> _ready = new List<OrderReady>();
         private int _nextId;
 
         [SetUp]
@@ -30,9 +31,11 @@ namespace SliceNServe.Tests
             _customer = TestData.Customer("c");
             _served.Clear();
             _wasted.Clear();
+            _ready.Clear();
             _nextId = 1;
             _events.Subscribe<OrderServed>(_served.Add);
             _events.Subscribe<IngredientWasted>(_wasted.Add);
+            _events.Subscribe<OrderReady>(_ready.Add);
         }
 
         [TearDown] public void TearDown() => TestData.Cleanup();
@@ -69,11 +72,14 @@ namespace SliceNServe.Tests
             Assert.That(_wasted.Count, Is.EqualTo(1));
 
             _queue.SubmitIngredient(_cheese, Vector2.zero);
-            Assert.That(_served.Count, Is.EqualTo(1), "the front customer is served");
-            Assert.That(front.State, Is.EqualTo(PatienceState.Served));
+            Assert.That(front.IsReady, Is.True, "the front customer's dish is ready");
 
+            // While it waits on the pass, the line moves on to the next customer.
             _queue.SubmitIngredient(_tomato, Vector2.zero);
             Assert.That(behind.Lines[0].Fulfilled, Is.EqualTo(1), "the next customer is now at the front");
+
+            Assert.That(_queue.TryServe(front.OrderId), Is.True);
+            Assert.That(front.State, Is.EqualTo(PatienceState.Served));
         }
 
         [Test]
@@ -83,8 +89,55 @@ namespace SliceNServe.Tests
             o.RewardScale = 2.4f;
 
             _queue.SubmitIngredient(_tomato, Vector2.zero);
+            _queue.TryServe(o.OrderId);
 
             Assert.That(_served[0].Cash, Is.EqualTo(24));
+        }
+
+        [Test]
+        public void CompleteOrder_WaitsToBeServed_WithItsPatienceRunning()
+        {
+            OrderInstance o = Order(1f, (_tomato, 1));
+
+            _queue.SubmitIngredient(_tomato, Vector2.zero);
+
+            Assert.That(_served, Is.Empty, "orders are no longer served automatically");
+            Assert.That(_ready.Count, Is.EqualTo(1));
+            Assert.That(o.IsReady, Is.True);
+            Assert.That(_queue.ActiveCount, Is.EqualTo(1), "the customer is still waiting");
+
+            float before = o.RemainingPatience;
+            _queue.Tick(1f);
+            Assert.That(o.RemainingPatience, Is.LessThan(before), "a ready dish going cold still costs patience");
+
+            Assert.That(_queue.TryServe(o.OrderId), Is.True);
+            Assert.That(_served.Count, Is.EqualTo(1));
+            Assert.That(_queue.ActiveCount, Is.EqualTo(0));
+            Assert.That(_queue.TryServe(o.OrderId), Is.False, "served once only");
+        }
+
+        [Test]
+        public void TryServe_RefusesAnOrderStillCooking()
+        {
+            OrderInstance o = Order(1f, (_tomato, 2));
+            _queue.SubmitIngredient(_tomato, Vector2.zero);
+
+            Assert.That(_queue.TryServe(o.OrderId), Is.False);
+            Assert.That(_served, Is.Empty);
+            Assert.That(o.State, Is.Not.EqualTo(PatienceState.Served));
+        }
+
+        [Test]
+        public void ReadyOrder_LeftTooLong_Expires()
+        {
+            OrderInstance o = Order(1f, (_tomato, 1));
+            _queue.SubmitIngredient(_tomato, Vector2.zero);
+
+            _queue.Tick(30f);
+
+            Assert.That(o.State, Is.EqualTo(PatienceState.Expired));
+            Assert.That(_queue.TryServe(o.OrderId), Is.False);
+            Assert.That(_served, Is.Empty);
         }
 
         [Test]
@@ -122,6 +175,8 @@ namespace SliceNServe.Tests
             Assert.That(o.IsComplete, Is.False);
 
             _queue.SubmitIngredient(_tomato, Vector2.zero);
+            Assert.That(o.IsReady, Is.True);
+            Assert.That(_queue.TryServe(o.OrderId), Is.True);
             Assert.That(_served.Count, Is.EqualTo(1));
             Assert.That(o.State, Is.EqualTo(PatienceState.Served));
         }
@@ -146,13 +201,26 @@ namespace SliceNServe.Tests
             OrderInstance second = Order(2f, (_tomato, 1));
 
             _queue.SubmitIngredient(_tomato, Vector2.zero);
+            _queue.TryServe(first.OrderId);
             Assert.That(_queue.ActiveCount, Is.EqualTo(1));
             Assert.That(_queue.Find(first.OrderId), Is.Null);
 
             _queue.SubmitIngredient(_tomato, Vector2.zero);
             Assert.That(first.Lines[0].Fulfilled, Is.EqualTo(1), "a served order is never credited again");
-            Assert.That(second.State, Is.EqualTo(PatienceState.Served));
-            Assert.That(_queue.ActiveCount, Is.EqualTo(0));
+            Assert.That(second.IsReady, Is.True);
+        }
+
+        [Test]
+        public void ReadyOrder_IsNeverCreditedAgain_EvenBeforeItIsServed()
+        {
+            OrderInstance first = Order(1f, (_tomato, 1));
+            OrderInstance second = Order(2f, (_tomato, 1));
+
+            _queue.SubmitIngredient(_tomato, Vector2.zero);
+            _queue.SubmitIngredient(_tomato, Vector2.zero);
+
+            Assert.That(first.Lines[0].Fulfilled, Is.EqualTo(1));
+            Assert.That(second.Lines[0].Fulfilled, Is.EqualTo(1));
         }
 
         [Test]
@@ -160,9 +228,10 @@ namespace SliceNServe.Tests
         {
             _customer = TestData.Customer("tipper", tip: 1.5f);
             _tuning.CashMultiplier = 2f;
-            Order(1f, (_tomato, 1));
+            OrderInstance o = Order(1f, (_tomato, 1));
 
             _queue.SubmitIngredient(_tomato, Vector2.zero);
+            _queue.TryServe(o.OrderId);
 
             Assert.That(_served[0].Cash, Is.EqualTo(30));
         }

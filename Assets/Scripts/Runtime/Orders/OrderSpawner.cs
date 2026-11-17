@@ -22,6 +22,7 @@ namespace SliceNServe.Orders
         private RuntimeTuning _tuning;
         private IDifficultyProvider _difficulty;
         private IngredientSpawner _board;
+        private GameRandom _random;
 
         private float[] _weights;
         private float _untilNextSpawn;
@@ -33,8 +34,9 @@ namespace SliceNServe.Orders
         public RushHour Rush { get; private set; }
 
         public void Initialize(IOrderQueue queue, RunClock clock, RuntimeTuning tuning,
-                               IDifficultyProvider difficulty, IngredientSpawner board)
+                               IDifficultyProvider difficulty, IngredientSpawner board, GameRandom random = null)
         {
+            _random = random ?? new GameRandom();
             _queue = queue;
             _clock = clock;
             _tuning = tuning;
@@ -117,7 +119,7 @@ namespace SliceNServe.Orders
             float total = 0f;
             for (int i = 0; i < customers.Length; i++) total += customers[i].SpawnWeight;
 
-            float r = Random.value * total;
+            float r = _random.Value * total;
             for (int i = 0; i < customers.Length; i++)
             {
                 r -= customers[i].SpawnWeight;
@@ -136,7 +138,7 @@ namespace SliceNServe.Orders
             }
             if (total <= 0f) return dishes[0];
 
-            float r = Random.value * total;
+            float r = _random.Value * total;
             for (int i = 0; i < dishes.Length; i++)
             {
                 r -= _weights[i];

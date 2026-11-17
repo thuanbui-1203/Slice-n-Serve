@@ -24,10 +24,18 @@ namespace SliceNServe.Board
         private int _sliceCount;
         private float _age;
         private bool _live;
+        private bool _spent;
 
         public bool IsLive => _live;
         public int KnifeId => _knifeId;
         public int BounceCount => _bounceCount;
+
+        /// <summary>How many times this knife may bounce off the border — the die roll. The hit
+        /// after the last allowed bounce ends it.</summary>
+        public int BounceBudget { get; private set; }
+
+        /// <summary>Bounces left before the next border hit ends the knife.</summary>
+        public int BouncesLeft => Mathf.Max(0, BounceBudget - _bounceCount);
 
         /// <summary>Ingredients sliced since launch — the combo counter, reset per launch.</summary>
         public int SliceCount => _sliceCount;
@@ -66,9 +74,12 @@ namespace SliceNServe.Board
             slicer.Initialize(body, spawner);
         }
 
-        public void Launch(int knifeId, Vector2 position, Vector2 velocity, LaunchSource source, bool fromHelper = false)
+        public void Launch(int knifeId, Vector2 position, Vector2 velocity, LaunchSource source, bool fromHelper = false,
+                           int bounceBudget = int.MaxValue)
         {
             _knifeId = knifeId;
+            BounceBudget = Mathf.Max(0, bounceBudget);
+            _spent = false;
             FromHelper = fromHelper || source == LaunchSource.Helper;
             _bounceCount = 0;
             _sliceCount = 0;
@@ -123,7 +134,8 @@ namespace SliceNServe.Board
             bool tooBouncy = _bounceCount > _tuning.MaxKnifeBounces;
             bool escaped = !_playArea.Contains(body.position);   // safety net, not a mechanism
 
-            if (tooSlow || tooOld || tooBouncy || escaped) Expired?.Invoke(this);
+            // The usual end: the die's bounces are used up and the knife hit the border again.
+            if (_spent || tooSlow || tooOld || tooBouncy || escaped) Expired?.Invoke(this);
         }
 
         private void OnCollisionEnter2D(Collision2D c)
@@ -135,7 +147,17 @@ namespace SliceNServe.Board
 
             ContactPoint2D contact = c.GetContact(0);   // contactCount is always >= 1 here
             _bounceCount++;
-            _events.Publish(new KnifeBounced(_knifeId, _bounceCount, contact.point));
+            _events.Publish(new KnifeBounced(_knifeId, _bounceCount, contact.point, BounceBudget - _bounceCount));
+
+            // Out of bounces: the knife sticks where it hit and is collected next step (never
+            // returned to the pool from inside a contact callback).
+            if (_bounceCount > BounceBudget)
+            {
+                _spent = true;
+                body.linearVelocity = Vector2.zero;
+                body.angularVelocity = 0f;
+                return;
+            }
 
             // OnCollisionEnter2D runs *after* the physics step, so the bounce has already
             // reflected the velocity; this only scales it.

@@ -3,6 +3,7 @@ using NUnit.Framework;
 using SliceNServe.Board;
 using SliceNServe.Core;
 using SliceNServe.Orders;
+using SliceNServe.UI;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
@@ -78,6 +79,52 @@ namespace SliceNServe.Tests
         }
 
         [UnityTest]
+        public IEnumerator Knife_EndsOnTheBorderHitAfterItsLastBounce_AtFullSpeed()
+        {
+            _knives.BounceBudget = 2;
+            Time.timeScale = 5f;
+            const float v0 = 15f;
+            KnifeController knife = _knives.Launch(new Vector2(0.45f, 1f).normalized * v0, LaunchSource.Manual);
+            Assert.That(knife.BounceBudget, Is.EqualTo(2));
+
+            float minSpeed = float.MaxValue;
+            for (int i = 0; i < 600 && knife.IsLive; i++)
+            {
+                yield return new WaitForFixedUpdate();
+                if (knife.IsLive && knife.BounceCount <= 2) minSpeed = Mathf.Min(minSpeed, knife.Body.linearVelocity.magnitude);
+            }
+
+            Assert.That(knife.IsLive, Is.False, "the knife ends");
+            Assert.That(knife.BounceCount, Is.EqualTo(3), "two bounces, then the third border hit ends it");
+            Assert.That(minSpeed, Is.EqualTo(v0).Within(v0 * 0.03f), "no friction: full speed between bounces");
+        }
+
+        [UnityTest]
+        public IEnumerator EveryThrow_RollsTheDieForTheNext()
+        {
+            var rolls = new System.Collections.Generic.List<int>();
+            System.Action<DiceRolled> onRoll = e => rolls.Add(e.Value);
+            _services.Events.Subscribe(onRoll);
+            var dice = Object.FindAnyObjectByType<DiceView>();
+
+            _runner.StartRun();
+            Assert.That(rolls.Count, Is.EqualTo(1), "the first knife's roll");
+            Assert.That(_knives.BounceBudget, Is.InRange(1, 6));
+            Assert.That(dice.Value, Is.EqualTo(_knives.BounceBudget));
+
+            Time.timeScale = 5f;
+            KnifeController knife = _knives.Launch(new Vector2(0.45f, 1f).normalized * 20f, LaunchSource.Manual);
+            Assert.That(knife.BounceBudget, Is.EqualTo(rolls[0]));
+            for (int i = 0; i < 900 && knife.IsLive; i++) yield return new WaitForFixedUpdate();
+            yield return null;
+
+            _services.Events.Unsubscribe(onRoll);
+            Assert.That(knife.BounceCount, Is.EqualTo(rolls[0] + 1));
+            Assert.That(rolls.Count, Is.EqualTo(2), "the knife landed: roll for the next one");
+            Assert.That(_knives.BounceBudget, Is.EqualTo(rolls[1]));
+        }
+
+        [UnityTest]
         public IEnumerator Bounces_LoseExactlyTheRetentionFactor()
         {
             Time.timeScale = 10f;
@@ -105,12 +152,14 @@ namespace SliceNServe.Tests
         public IEnumerator FastKnife_CollectsAnIngredientOnItsPath_WithoutDeflecting()
         {
             _ingredients.Clear();
-            Ingredient target = _ingredients.ForceSpawn(_ingredients.Definitions[0], new Vector2(0f, 0f));
+            // Straight above the launcher, wherever the layout puts it.
+            Vector2 at = new Vector2(_services.Tuning.Config.launcherPosition.x, 0f);
+            Ingredient target = _ingredients.ForceSpawn(_ingredients.Definitions[0], at);
             Assert.That(target, Is.Not.Null);
             yield return new WaitForFixedUpdate();   // let the moved collider sync into physics
 
             Ingredient sliced = null;
-            System.Action<IngredientSliced> onSliced = e => { if (e.Position == Vector2.zero) sliced = target; };
+            System.Action<IngredientSliced> onSliced = e => { if (e.Position == at) sliced = target; };
             _services.Events.Subscribe(onSliced);
 
             KnifeController knife = _knives.Launch(Vector2.up * 40f, LaunchSource.Manual);
@@ -152,8 +201,47 @@ namespace SliceNServe.Tests
                 for (int n = order.Lines[l].Fulfilled; n < order.Lines[l].Required; n++)
                     _services.Events.Publish(new IngredientSliced(order.Lines[l].Ingredient, Vector2.zero, 1, 0, 1));
 
+            // Complete is not served: the dish waits until the player hands it over.
+            Assert.That(order.IsReady, Is.True);
+            Assert.That(_services.Wallet.Amount, Is.EqualTo(cashBefore));
+
+            // Tap the customers, then the ready ticket in the orders panel.
+            var panel = Object.FindAnyObjectByType<OrdersPanel>();
+            var hud = Object.FindAnyObjectByType<OrderTicketHud>();
+            _runner.ToggleOrders();
+            Assert.That(panel.IsOpen, Is.True);
+            yield return null;
+            hud.Ticket(order.OrderId).OnTapped();
+
             Assert.That(order.State, Is.EqualTo(PatienceState.Served));
             Assert.That(_services.Wallet.Amount, Is.EqualTo(cashBefore + order.Dish.BaseCash));
+        }
+
+        [UnityTest]
+        public IEnumerator Customers_WalkInForEachOrder_AndTappingThemOpensTheOrders()
+        {
+            var line = Object.FindAnyObjectByType<CustomerLine>();
+            var panel = Object.FindAnyObjectByType<OrdersPanel>();
+            var aim = Object.FindAnyObjectByType<AimInput>();
+            _runner.StartRun();
+            for (int i = 0; i < 10 && _runner.Queue.ActiveCount == 0; i++) yield return null;
+
+            Assert.That(line.Waiting, Is.EqualTo(_runner.Queue.ActiveCount), "one customer in line per order");
+            Assert.That(line.Area.xMax, Is.LessThan(_services.Tuning.Config.worldBounds.xMin), "the dining room is left of the board");
+
+            // A press in the dining room is claimed: it opens the panel and never starts a throw.
+            Assert.That(aim.PressFilter(line.Area.center), Is.True);
+            Assert.That(panel.IsOpen, Is.True);
+            Assert.That(aim.PressFilter(_services.Tuning.Config.worldBounds.center), Is.False, "the board still aims");
+
+            // Once served, the customer walks out.
+            OrderInstance order = _runner.Queue[0];
+            for (int l = 0; l < order.Lines.Length; l++)
+                for (int n = order.Lines[l].Fulfilled; n < order.Lines[l].Required; n++)
+                    _services.Events.Publish(new IngredientSliced(order.Lines[l].Ingredient, Vector2.zero, 1, 0, 1));
+            int waiting = line.Waiting;
+            Assert.That(_runner.Queue.TryServe(order.OrderId), Is.True);
+            Assert.That(line.Waiting, Is.EqualTo(waiting - 1));
         }
 
         [UnityTest]

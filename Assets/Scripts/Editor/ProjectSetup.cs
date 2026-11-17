@@ -79,6 +79,8 @@ namespace SliceNServe.EditorTools
             ConfigureTextures();
             ConfigureFppTextures();
             ConfigureRestaurantTextures();
+            ConfigureCustomerTextures();
+            ConfigureDiceAndChandelierTextures();
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -298,6 +300,7 @@ namespace SliceNServe.EditorTools
             config.worldBounds = defaults.worldBounds;
             config.launcherPosition = defaults.launcherPosition;
             config.ingredientZone = defaults.ingredientZone;
+            config.bounceRetention = defaults.bounceRetention;   // a rule now: the die limits bounces, knives keep their speed
             Object.DestroyImmediate(defaults);
             EditorUtility.SetDirty(config);
 
@@ -519,7 +522,6 @@ namespace SliceNServe.EditorTools
             layout.preferredWidth = w;
             layout.preferredHeight = h;
             var group = root.AddComponent<CanvasGroup>();
-            group.blocksRaycasts = false;
             var view = root.AddComponent<OrderTicketView>();
 
             RectTransform body = Rect("Body", root.transform);
@@ -575,6 +577,25 @@ namespace SliceNServe.EditorTools
             var bar = barSlot.gameObject.AddComponent<PatienceBar>();
             SetRefs(bar, ("fill", fill), ("shakeTarget", shake));
 
+            // Ready: a green band over the finished checklist. The whole ticket is the button.
+            RectTransform ready = Rect("Ready", body);
+            Place(ready, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, -78f), new Vector2(-16f, 78f), new Vector2(0.5f, 1f));
+            Image readyBg = ready.gameObject.AddComponent<Image>();
+            Panel(readyBg, new Color(0.27f, 0.62f, 0.27f));
+            readyBg.raycastTarget = false;
+            TextMeshProUGUI readyText = Text("Label", ready, PixelFont(font), 36f, Color.white, TextAlignmentOptions.Center, bold: false);
+            Stretch(readyText.rectTransform);
+            readyText.SetText("Tap to serve!");
+            ready.gameObject.SetActive(false);
+
+            var button = root.AddComponent<Button>();
+            button.targetGraphic = bg;
+            ColorBlock colors = button.colors;
+            colors.highlightedColor = new Color(1f, 0.96f, 0.88f);
+            colors.pressedColor = new Color(0.85f, 0.8f, 0.72f);
+            colors.selectedColor = Color.white;
+            button.colors = colors;
+
             Image flash = Img("Flash", body, Placeholder("panel"), Color.clear);
             flash.type = Image.Type.Sliced;
             Stretch(flash.rectTransform);
@@ -587,6 +608,8 @@ namespace SliceNServe.EditorTools
             so.FindProperty("dishName").objectReferenceValue = dishName;
             so.FindProperty("dishIcon").objectReferenceValue = dishIcon;
             so.FindProperty("patience").objectReferenceValue = bar;
+            so.FindProperty("button").objectReferenceValue = button;
+            so.FindProperty("readyBanner").objectReferenceValue = ready.gameObject;
             SerializedProperty lines = so.FindProperty("lines");
             lines.arraySize = slots.Length;
             for (int i = 0; i < slots.Length; i++)
@@ -721,6 +744,8 @@ namespace SliceNServe.EditorTools
             SetRefs(fx, ("particleSprite", Placeholder("square")), ("ringSprite", Placeholder("circle")), ("popupFont", font));
 
             KitchenDecor kitchen = BuildKitchen();
+            CustomerLine customerLine = BuildCustomers(PixelFont(font));
+            DiceView diceView = BuildDice(config, PixelFont(font));
 
             var audioGo = new GameObject("Audio");
             var audioSource = audioGo.AddComponent<AudioSource>();
@@ -732,15 +757,17 @@ namespace SliceNServe.EditorTools
             SetRefs(gameAudio, ("source", audioSource), ("musicSource", musicSource),
                     ("music", AssetDatabase.LoadAssetAtPath<AudioClip>(ArtFpp + "/Audio/Song1.mp3")));
 
-            Menus menus = BuildHud(cam, ticketPrefab, cardPrefab, font, gameAudio);
-            SetArray(aim, "blockers", new Object[] { menus.HudUpgrades.transform });
+            Menus menus = BuildHud(cam, ticketPrefab, cardPrefab, font, gameAudio, customerLine);
+            SetArray(aim, "blockers", new Object[] { menus.HudUpgrades.transform, menus.Orders.transform.Find("Slide"), menus.AutoToggle.transform });
 
             var runner = new GameObject("Runner").AddComponent<GameRunner>();
             SetRefs(runner,
                 ("bootstrap", bootstrap), ("bounds", bounds), ("ingredients", spawner), ("knives", knives),
                 ("aimInput", aim), ("trajectoryPreview", preview), ("orderSpawner", orders), ("boardFx", fx), ("kitchen", kitchen),
                 ("hud", menus.Hud), ("overlay", menus.Overlay), ("gameAudio", gameAudio), ("shop", menus.Shop),
-                ("mainMenu", menus.MainMenu), ("settingsPanel", menus.Settings), ("hudUpgrades", menus.HudUpgrades), ("banner", menus.Banner));
+                ("mainMenu", menus.MainMenu), ("settingsPanel", menus.Settings), ("hudUpgrades", menus.HudUpgrades), ("banner", menus.Banner),
+                ("customers", customerLine), ("ordersPanel", menus.Orders),
+                ("dice", diceView), ("autoToggle", menus.AutoToggle), ("autoLabel", menus.AutoLabel));
 
             EditorSceneManager.SaveScene(scene, ScenePath);
         }
@@ -758,6 +785,12 @@ namespace SliceNServe.EditorTools
             SetRefs(kitchen, ("square", Placeholder("square")), ("circle", Placeholder("circle")),
                     ("wallTile", brick != null ? brick : Placeholder("floor_tile")));
             if (brick != null) SetColor(kitchen, "wallColor", new Color(0.5f, 0.42f, 0.42f));   // brick, dimmed behind the board
+
+            // The dining room: wooden plank wall, the pack's front door, a chair and table.
+            SetRefs(kitchen, ("diningWall", RestaurantSprite("Tiles", 16)), ("door", RestaurantSprite("Door", 1)));
+            SetArray(kitchen, "furniture", Restaurant(("Furniture", 0), ("Furniture", 1)));
+            Sprite chandelier = ArtFolderSprites(ChandelierDir).FirstOrDefault();
+            if (chandelier != null) SetRefs(kitchen, ("chandelier", chandelier));
 
             SetArray(kitchen, "pans", Marts("frying pan"));
             SetArray(kitchen, "pots", Restaurant(("ChefTools", 5)).Concat(Marts("teakettle")).ToArray());
@@ -853,6 +886,8 @@ namespace SliceNServe.EditorTools
 
             GridSlice(ChefSheet, 48, 56, new Vector2(0.5f, 0f), fullRect: false);
             GridSlice(RestaurantDir + "/Tiles.png", 32, 32, new Vector2(0.5f, 0.5f), fullRect: true);
+            GridSlice(RestaurantDir + "/Door.png", 64, 64, new Vector2(0.5f, 0f), fullRect: false);        // side, front
+            GridSlice(RestaurantDir + "/Furniture.png", 32, 32, new Vector2(0.5f, 0f), fullRect: false);   // chair, table, stool, …
 
             foreach (string sheet in new[] { "ChefTools", "Meat" })
             {
@@ -862,6 +897,154 @@ namespace SliceNServe.EditorTools
                 importer.textureCompression = TextureImporterCompression.Uncompressed;
                 importer.SaveAndReimport();
             }
+        }
+
+        // Customers: side-view walk cycles facing right, one character per PNG, frames in a single
+        // row of squares (frame size = sheet height). Drop a pack into Assets/Art/Customers to
+        // replace the generated placeholders; an optional "<name>_idle.png" adds idle frames.
+        private const string CustomersDir = "Assets/Art/Customers";
+        private const string PlaceholderCustomersDir = ArtPlaceholders + "/Customers";
+
+        private static string CustomerArtDir()
+            => AssetDatabase.IsValidFolder(CustomersDir) && Directory.GetFiles(CustomersDir, "*.png").Length > 0 ? CustomersDir : PlaceholderCustomersDir;
+
+        private static string[] CustomerSheets()
+        {
+            string dir = CustomerArtDir();
+            return Directory.Exists(dir)
+                ? Directory.GetFiles(dir, "*.png").Select(f => f.Replace('\\', '/')).OrderBy(f => f).ToArray()
+                : new string[0];
+        }
+
+        private static void ConfigureCustomerTextures()
+        {
+            foreach (string sheet in CustomerSheets())
+            {
+                var importer = AssetImporter.GetAtPath(sheet) as TextureImporter;
+                if (importer == null) continue;
+                importer.GetSourceTextureWidthAndHeight(out int width, out int height);
+                if (height <= 0 || width % height != 0)
+                {
+                    Debug.LogWarning($"[Setup] {sheet} is {width}×{height}: customer sheets must be one row of square frames. Skipped.");
+                    continue;
+                }
+                GridSlice(sheet, height, height, new Vector2(0.5f, 0f), fullRect: false);
+            }
+        }
+
+        private static CustomerLine BuildCustomers(TMP_FontAsset font)
+        {
+            var line = new GameObject("Customers").AddComponent<CustomerLine>();
+            SetRefs(line, ("square", Placeholder("square")), ("check", Placeholder("check")), ("font", font));
+
+            string[] sheets = CustomerSheets().Where(s => !s.EndsWith("_idle.png")).ToArray();
+            var so = new SerializedObject(line);
+            SerializedProperty looks = so.FindProperty("looks");
+            looks.arraySize = 0;
+            foreach (string sheet in sheets)
+            {
+                Sprite[] walk = LoadAllAssetsSorted(sheet);
+                if (walk.Length == 0) continue;
+                Sprite[] idle = LoadAllAssetsSorted(sheet.Substring(0, sheet.Length - 4) + "_idle.png");
+
+                looks.arraySize++;
+                SerializedProperty look = looks.GetArrayElementAtIndex(looks.arraySize - 1);
+                SetSprites(look.FindPropertyRelative("walk"), walk);
+                SetSprites(look.FindPropertyRelative("idle"), idle);
+            }
+            so.ApplyModifiedPropertiesWithoutUndo();
+            Debug.Log($"[Setup] Customers: {looks.arraySize} looks from {CustomerArtDir()}.");
+            return line;
+        }
+
+        // Dice: faces 1–6, either one row of six square frames or six separate images (sorted by
+        // name); a file with "roll" in its name adds tumbling frames. Drop a pack into
+        // Assets/Art/Dice to replace the generated placeholder faces.
+        // Chandelier: the first PNG in Assets/Art/Chandelier replaces the dining room's lamps.
+        private const string DiceDir = "Assets/Art/Dice";
+        private const string PlaceholderDiceDir = ArtPlaceholders + "/Dice";
+        private const string ChandelierDir = "Assets/Art/Chandelier";
+
+        private static string DiceArtDir()
+            => AssetDatabase.IsValidFolder(DiceDir) && Directory.GetFiles(DiceDir, "*.png").Length > 0 ? DiceDir : PlaceholderDiceDir;
+
+        private static string[] Pngs(string dir)
+            => Directory.Exists(dir)
+                ? Directory.GetFiles(dir, "*.png").Select(f => f.Replace('\\', '/')).OrderBy(f => f).ToArray()
+                : new string[0];
+
+        private static void ConfigureDiceAndChandelierTextures()
+        {
+            foreach (string png in Pngs(DiceArtDir()).Concat(Pngs(ChandelierDir)))
+            {
+                var importer = AssetImporter.GetAtPath(png) as TextureImporter;
+                if (importer == null) continue;
+                importer.GetSourceTextureWidthAndHeight(out int width, out int height);
+
+                bool strip = !png.StartsWith(ChandelierDir) && height > 0 && width % height == 0 && width / height > 1;
+                if (strip) { GridSlice(png, height, height, new Vector2(0.5f, 0.5f), fullRect: false); continue; }
+
+                if (importer.textureType == TextureImporterType.Sprite && importer.filterMode == FilterMode.Point
+                    && importer.textureCompression == TextureImporterCompression.Uncompressed) continue;
+                importer.textureType = TextureImporterType.Sprite;
+                if (importer.spriteImportMode == SpriteImportMode.None) importer.spriteImportMode = SpriteImportMode.Single;
+                importer.filterMode = FilterMode.Point;
+                importer.textureCompression = TextureImporterCompression.Uncompressed;
+                importer.mipmapEnabled = false;
+                importer.SaveAndReimport();
+            }
+        }
+
+        private static Sprite[] ArtFolderSprites(string dir, System.Func<string, bool> filter = null)
+            => Pngs(dir).Where(f => filter == null || filter(f)).SelectMany(LoadAllAssetsSorted).ToArray();
+
+        private static DiceView BuildDice(BoardConfig config, TMP_FontAsset font)
+        {
+            string dir = DiceArtDir();
+            Sprite[] faces = ArtFolderSprites(dir, f => !Path.GetFileName(f).ToLowerInvariant().Contains("roll")).Take(6).ToArray();
+            Sprite[] roll = ArtFolderSprites(dir, f => Path.GetFileName(f).ToLowerInvariant().Contains("roll"));
+            if (faces.Length < 6) Debug.LogWarning($"[Setup] Dice: found {faces.Length} faces in {dir}, need 6 (1 to 6).");
+            else Debug.Log($"[Setup] Dice: faces from {dir}{(roll.Length > 0 ? $", {roll.Length} roll frames" : "")}.");
+
+            // Beside the launcher, in the launch corridor.
+            var root = new GameObject("Dice");
+            root.transform.position = config.launcherPosition + new Vector2(1.6f, -0.1f);
+
+            var shadow = new GameObject("Shadow").AddComponent<SpriteRenderer>();
+            shadow.transform.SetParent(root.transform, false);
+            shadow.transform.localPosition = new Vector3(0f, -0.45f, 0f);
+            shadow.sprite = Placeholder("circle");
+            shadow.color = new Color(0f, 0f, 0f, 0.25f);
+            shadow.sortingOrder = 19;
+
+            var face = new GameObject("Face").AddComponent<SpriteRenderer>();
+            face.transform.SetParent(root.transform, false);
+            face.sortingOrder = 21;
+            if (faces.Length > 0) face.sprite = faces[0];
+
+            var labelGo = new GameObject("Label");
+            labelGo.transform.SetParent(root.transform, false);
+            labelGo.transform.localPosition = new Vector3(0f, 0.68f, 0f);   // above: the board frame is just below
+            var label = labelGo.AddComponent<TextMeshPro>();
+            if (font != null) label.font = font;
+            label.fontSize = 2.4f;
+            label.alignment = TextAlignmentOptions.Center;
+            label.textWrappingMode = TextWrappingModes.NoWrap;
+            label.color = new Color(0.36f, 0.22f, 0.18f);
+            label.sortingOrder = 22;
+            label.rectTransform.sizeDelta = new Vector2(2f, 0.4f);
+
+            var view = root.AddComponent<DiceView>();
+            SetRefs(view, ("face", face), ("shadow", shadow), ("label", label));
+            SetArray(view, "faces", faces.ToArray<Object>());
+            SetArray(view, "rollFrames", roll.ToArray<Object>());
+            return view;
+        }
+
+        private static void SetSprites(SerializedProperty array, Sprite[] sprites)
+        {
+            array.arraySize = sprites.Length;
+            for (int i = 0; i < sprites.Length; i++) array.GetArrayElementAtIndex(i).objectReferenceValue = sprites[i];
         }
 
         private static void SetColor(Object target, string field, Color value)
@@ -880,10 +1063,13 @@ namespace SliceNServe.EditorTools
             public SettingsPanel Settings;
             public Button HudUpgrades;
             public HudBanner Banner;
+            public OrdersPanel Orders;
+            public Button AutoToggle;
+            public TextMeshProUGUI AutoLabel;
         }
 
         private static Menus BuildHud(Camera cam, OrderTicketView ticketPrefab, ShopCard cardPrefab,
-                                      TMP_FontAsset font, GameAudio gameAudio)
+                                      TMP_FontAsset font, GameAudio gameAudio, CustomerLine customerLine)
         {
             TMP_FontAsset pixelFont = PixelFont(font);
 
@@ -904,17 +1090,47 @@ namespace SliceNServe.EditorTools
             Stretch(safe);
             safe.gameObject.AddComponent<SafeAreaFitter>();
 
-            // Ticket strip: top-left, left→right in spawn order.
-            RectTransform strip = Rect("TicketStrip", safe);
-            // Wide enough for five tickets at full size; a rush wave shrinks the strip to fit (OrderTicketHud).
-            Place(strip, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(18f, -10f), new Vector2(1590f, 196f));
-            var row = strip.gameObject.AddComponent<HorizontalLayoutGroup>();
-            row.spacing = 14f;
-            row.childAlignment = TextAnchor.UpperLeft;
-            row.childControlWidth = false;
-            row.childControlHeight = false;
-            row.childForceExpandWidth = false;
-            row.childForceExpandHeight = false;
+            // The orders panel: slides in from the left over the dining room when the customers
+            // are tapped. Tickets sit two to a row in spawn order; a rush shrinks the grid to fit.
+            RectTransform ordersRoot = Rect("Orders", safe);
+            Stretch(ordersRoot);
+            RectTransform slide = Rect("Slide", ordersRoot);
+            slide.anchorMin = new Vector2(0f, 0f);
+            slide.anchorMax = new Vector2(0f, 1f);
+            slide.pivot = new Vector2(0f, 0.5f);
+            slide.offsetMin = new Vector2(0f, 10f);
+            slide.offsetMax = new Vector2(620f, -10f);
+            Panel(slide.gameObject.AddComponent<Image>(), new Color(0.16f, 0.1f, 0.09f, 0.94f));
+
+            TextMeshProUGUI ordersTitle = Text("Title", slide, pixelFont, 46f, new Color(1f, 0.93f, 0.76f), TextAlignmentOptions.Left, bold: false);
+            Place(ordersTitle.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(24f, -12f), new Vector2(-120f, 58f));
+            ordersTitle.SetText("Orders");
+            TextMeshProUGUI ordersHint = Text("Hint", slide, font, 24f, new Color(1f, 0.93f, 0.76f, 0.75f), TextAlignmentOptions.Left, bold: false);
+            Place(ordersHint.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(24f, -70f), new Vector2(-120f, 34f));
+            ordersHint.SetText("Tap a green ticket to serve it");
+
+            Button closeOrders = PixelButton("Close", slide, FppSprite(FppUiSheet, "UI_91"), pixelFont, 30f, Color.white,
+                                             new Vector2(1f, 1f), new Vector2(-16f, -14f), new Vector2(84f, 84f), gameAudio, out TextMeshProUGUI closeLabel);
+            ((RectTransform)closeOrders.transform).pivot = new Vector2(1f, 1f);
+            closeLabel.SetText("");
+            Image closeIcon = Img("Icon", closeOrders.transform, FppIcon("X"), Color.white);
+            Place(closeIcon.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 2f), new Vector2(46f, 46f), new Vector2(0.5f, 0.5f));
+
+            RectTransform strip = Rect("Tickets", slide);
+            strip.anchorMin = new Vector2(0f, 0f);
+            strip.anchorMax = new Vector2(1f, 1f);
+            strip.pivot = new Vector2(0f, 1f);
+            strip.offsetMin = new Vector2(16f, 16f);
+            strip.offsetMax = new Vector2(-16f, -116f);
+            var grid = strip.gameObject.AddComponent<GridLayoutGroup>();
+            grid.cellSize = new Vector2(300f, 196f);
+            grid.spacing = new Vector2(14f, 14f);
+            grid.childAlignment = TextAnchor.UpperLeft;
+            grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            grid.constraintCount = 2;
+
+            var ordersPanel = ordersRoot.gameObject.AddComponent<OrdersPanel>();
+            SetRefs(ordersPanel, ("slide", slide), ("list", strip), ("closeButton", closeOrders));
 
             // Status: cash and reputation, top-right.
             RectTransform status = Rect("Status", safe);
@@ -959,9 +1175,15 @@ namespace SliceNServe.EditorTools
             Image shopIcon = Img("Icon", hudUpgrades.transform, FppIcon("Shop"), Color.white);
             Place(shopIcon.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(22f, 2f), new Vector2(46f, 46f), new Vector2(0f, 0.5f));
 
-            // Run events (rush hour, bigger orders), centred under the ticket strip.
+            // Auto-throw switch, under Upgrades; GameRunner shows it once auto-throw is unlocked.
+            Button autoToggle = PixelButton("AutoThrow", safe, FppSprite(FppUiSheet, "UI_91"), pixelFont, 28f, Color.white,
+                                            new Vector2(1f, 1f), new Vector2(-18f, -254f), new Vector2(270f, 76f), gameAudio, out TextMeshProUGUI autoLabel);
+            autoLabel.SetText("Auto: ON");
+            autoToggle.gameObject.SetActive(false);
+
+            // Run events (rush hour, bigger orders, "order ready"), across the top of the board.
             RectTransform bannerRt = Rect("Banner", safe);
-            Place(bannerRt, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -222f), new Vector2(1120f, 72f), new Vector2(0.5f, 1f));
+            Place(bannerRt, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(120f, -14f), new Vector2(1120f, 72f), new Vector2(0.5f, 1f));
             var bannerGroup = bannerRt.gameObject.AddComponent<CanvasGroup>();
             bannerGroup.blocksRaycasts = false;
             bannerGroup.alpha = 0f;
@@ -973,12 +1195,12 @@ namespace SliceNServe.EditorTools
             var banner = bannerRt.gameObject.AddComponent<HudBanner>();
             SetRefs(banner, ("group", bannerGroup), ("background", bannerBg), ("label", bannerText));
 
-            // First-run hint in the launch corridor, bottom-left.
+            // First-run hint in the launch corridor, under the board.
             RectTransform hintRt = Rect("Hint", safe);
-            Place(hintRt, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(28f, 18f), new Vector2(760f, 70f), new Vector2(0f, 0f));
+            Place(hintRt, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(250f, 18f), new Vector2(760f, 70f), new Vector2(0.5f, 0f));
             var hint = hintRt.gameObject.AddComponent<CanvasGroup>();
             hint.blocksRaycasts = false;
-            TextMeshProUGUI hintText = Text("Text", hintRt, font, 32f, Color.white, TextAlignmentOptions.BottomLeft, bold: true);
+            TextMeshProUGUI hintText = Text("Text", hintRt, font, 32f, Color.white, TextAlignmentOptions.Bottom, bold: true);
             Stretch(hintText.rectTransform);
             hintText.SetText("Drag back and release to throw the knife");
             hintText.outlineWidth = 0.2f;
@@ -990,7 +1212,8 @@ namespace SliceNServe.EditorTools
             var hud = canvasGo.AddComponent<OrderTicketHud>();
             SetRefs(hud,
                 ("container", strip), ("ticketPrefab", ticketPrefab), ("cash", cash), ("reputation", reputation),
-                ("hint", hint), ("boardCamera", cam), ("effectsRoot", effects), ("font", font));
+                ("hint", hint), ("boardCamera", cam), ("effectsRoot", effects), ("font", font),
+                ("panel", ordersPanel), ("customers", customerLine));
 
             // Sibling order is draw order: the shop and settings open on top of the menu and cards.
             RunOverlay overlay = BuildOverlay(canvasGo.transform, font, pixelFont, gameAudio);
@@ -1002,7 +1225,8 @@ namespace SliceNServe.EditorTools
             eventSystem.AddComponent<UnityEngine.EventSystems.EventSystem>();
             eventSystem.AddComponent<InputSystemUIInputModule>();
 
-            return new Menus { Hud = hud, Overlay = overlay, Shop = shop, MainMenu = mainMenu, Settings = settings, HudUpgrades = hudUpgrades, Banner = banner };
+            return new Menus { Hud = hud, Overlay = overlay, Shop = shop, MainMenu = mainMenu, Settings = settings, HudUpgrades = hudUpgrades, Banner = banner, Orders = ordersPanel,
+                             AutoToggle = autoToggle, AutoLabel = autoLabel };
         }
 
         // ---------------------------------------------------------------- main menu & settings

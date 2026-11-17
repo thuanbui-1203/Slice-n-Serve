@@ -28,6 +28,9 @@ namespace SliceNServe.Core
         /// <summary>Volumes and display preferences, for the menu's Settings panel.</summary>
         public GameSettings Settings { get; set; }
 
+        /// <summary>Gameplay randomness, seeded (§5 prep). Set by the bootstrap.</summary>
+        public GameRandom Random { get; set; } = new GameRandom();
+
         public static ServiceRegistry Current { get; private set; }
 
         public static ServiceRegistry Install(ServiceRegistry registry)

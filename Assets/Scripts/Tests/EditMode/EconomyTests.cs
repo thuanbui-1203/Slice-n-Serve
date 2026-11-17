@@ -57,6 +57,22 @@ namespace SliceNServe.Tests
         // ------------------------------------------------------------ wallet
 
         [Test]
+        public void AutoThrow_UnlocksOnlyWithSpeedAndSplitBothMaxed()
+        {
+            UpgradeService shop = Service();
+            _wallet.Add(1000000);
+
+            for (int i = 0; i < _speed.MaxLevel; i++) shop.TryBuy(_speed);
+            Assert.That(shop.AutoThrowUnlocked, Is.False, "speed alone is not enough");
+
+            for (int i = 0; i < _split.MaxLevel - 1; i++) shop.TryBuy(_split);
+            Assert.That(shop.AutoThrowUnlocked, Is.False, "split one level short");
+
+            shop.TryBuy(_split);
+            Assert.That(shop.AutoThrowUnlocked, Is.True);
+        }
+
+        [Test]
         public void Wallet_SpendsOnlyWhatItHas()
         {
             var wallet = new Wallet(50);

@@ -26,14 +26,16 @@ namespace SliceNServe.Board
         private RuntimeTuning _tuning;
         private EventBus _events;
         private float _nextSpawnTime;
+        private GameRandom _random = new GameRandom();
 
         public IReadOnlyList<IngredientDefinition> Definitions => definitions;
         public int LiveCount => _live.Count;
         public IReadOnlyList<Ingredient> Live => _live;
 
-        public void Initialize(RuntimeTuning tuning, EventBus events)
+        public void Initialize(RuntimeTuning tuning, EventBus events, GameRandom random = null)
         {
             _tuning = tuning;
+            if (random != null) _random = random;
             _events = events;
             _nextSpawnTime = Time.time;
 
@@ -96,7 +98,7 @@ namespace SliceNServe.Board
 
             for (int attempt = 0; attempt < PlacementAttempts; attempt++)
             {
-                var p = new Vector2(Random.Range(zone.xMin + r, zone.xMax - r), Random.Range(zone.yMin + r, zone.yMax - r));
+                var p = new Vector2(_random.Range(zone.xMin + r, zone.xMax - r), _random.Range(zone.yMin + r, zone.yMax - r));
                 if (!IsClear(p, r)) continue;
 
                 Place(def, p);
@@ -181,7 +183,29 @@ namespace SliceNServe.Board
             _pool.Add(ing);
         }
 
-        private IngredientDefinition PickDefinition() => PickWeighted(definitions, Random.value);
+        private IngredientDefinition PickDefinition() => PickWeighted(definitions, _random.Value);
+
+        /// <summary>
+        /// Auto-throw's restock tap: an ingredient from the spawn table, near where the player
+        /// tapped, kept inside the ingredient zone and clear of the others where possible. Not past
+        /// the working maximum, so tapping can't flood the board. Null if it didn't fit.
+        /// </summary>
+        public Ingredient SpawnNear(Vector2 position)
+        {
+            IngredientDefinition def = PickDefinition();
+            if (def == null || _live.Count >= _tuning.WorkingMaxIngredientCount) return null;
+
+            Rect zone = _tuning.IngredientZone;
+            float r = def.Radius;
+            for (int attempt = 0; attempt < PlacementAttempts; attempt++)
+            {
+                Vector2 jitter = attempt == 0 ? Vector2.zero : new Vector2(_random.Range(-1f, 1f), _random.Range(-1f, 1f)) * (0.4f + 0.2f * attempt);
+                var p = new Vector2(Mathf.Clamp(position.x + jitter.x, zone.xMin + r, zone.xMax - r),
+                                    Mathf.Clamp(position.y + jitter.y, zone.yMin + r, zone.yMax - r));
+                if (IsClear(p, r)) return Place(def, p);
+            }
+            return null;
+        }
 
         /// <summary>Weighted draw over <see cref="IngredientDefinition.SpawnWeight"/>. Pure, so the
         /// distribution is testable with a seeded roll in [0, 1).</summary>

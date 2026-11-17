@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using SliceNServe.Board;
 using SliceNServe.Core;
 using SliceNServe.Orders;
 using TMPro;
@@ -8,7 +9,8 @@ using UnityEngine.UI;
 namespace SliceNServe.UI
 {
     /// <summary>
-    /// The ticket strip and the HUD readouts. Driven by plain C# events from the services, which
+    /// The order tickets (in the slide-in <see cref="OrdersPanel"/>, where ready ones are served)
+    /// and the HUD readouts. Driven by plain C# events from the services, which
     /// never know it exists (decision D15): delete the HUD and the game still runs.
     /// </summary>
     public sealed class OrderTicketHud : MonoBehaviour
@@ -25,11 +27,15 @@ namespace SliceNServe.UI
         [SerializeField] private Camera boardCamera;
         [SerializeField] private RectTransform effectsRoot;
         [SerializeField] private TMP_FontAsset font;
+        [Tooltip("Optional: while the orders panel is closed, credits fly to the customer's bubble instead.")]
+        [SerializeField] private OrdersPanel panel;
+        [SerializeField] private CustomerLine customers;
 
         private struct Flyer
         {
             public Vector3 From;
             public RectTransform Target;
+            public Vector3 WorldTarget;
             public float Age;
         }
 
@@ -114,7 +120,7 @@ namespace SliceNServe.UI
             if (order == null) return;
 
             OrderTicketView ticket = Instantiate(ticketPrefab, container);
-            ticket.Bind(order);
+            ticket.Bind(order, id => _queue.TryServe(id));
             _tickets.Add(ticket);
         }
 
@@ -126,7 +132,14 @@ namespace SliceNServe.UI
             ticket.OnProgress(e.IngredientId);
 
             RectTransform target = ticket.LineTarget(e.IngredientId);
-            if (target != null && boardCamera != null) Fly(e.Position, target);
+            if (target == null || boardCamera == null) return;
+
+            // With the panel shut, the slice flies to the customer who ordered it.
+            bool panelShut = panel != null && !panel.IsOpen;
+            if (panelShut && customers != null && customers.TryGetIconPosition(e.OrderId, e.IngredientId, out Vector3 world))
+                Fly(e.Position, null, world, target.GetComponent<Image>().sprite);
+            else if (!panelShut)
+                Fly(e.Position, target, default, target.GetComponent<Image>().sprite);
         }
 
         private void OnServed(OrderServed e)
@@ -150,34 +163,48 @@ namespace SliceNServe.UI
             return null;
         }
 
+        /// <summary>For tests and the runner: the live ticket for an order, or null.</summary>
+        public OrderTicketView Ticket(int orderId) => FindTicket(orderId);
+
         /// <summary>
-        /// A rush wave can line up more tickets than the strip holds at full size: shrink the
-        /// whole strip (from its top-left pivot) until every ticket fits, and grow back as the
-        /// line clears. Eased, so a wave arriving reads as the line squeezing up.
+        /// The tickets sit in a grid of fixed columns. Shrink the whole grid (from its top-left
+        /// pivot) until every ticket fits — a rush wave can bring more than it holds at full
+        /// size — and grow back as the line clears. Eased, so a wave reads as a squeeze.
         /// </summary>
         private void FitStrip(float dt)
         {
-            var layout = container.GetComponent<HorizontalLayoutGroup>();
-            float spacing = layout != null ? layout.spacing : 0f;
-            float ticketWidth = ((RectTransform)ticketPrefab.transform).sizeDelta.x;
+            Vector2 cell = ((RectTransform)ticketPrefab.transform).sizeDelta;
+            Vector2 spacing = Vector2.zero;
+            int columns = 1000;
+            if (container.TryGetComponent(out GridLayoutGroup grid))
+            {
+                cell = grid.cellSize;
+                spacing = grid.spacing;
+                if (grid.constraint == GridLayoutGroup.Constraint.FixedColumnCount) columns = grid.constraintCount;
+            }
+            else if (container.TryGetComponent(out HorizontalLayoutGroup row)) spacing.x = row.spacing;
 
-            int n = _tickets.Count;
-            float needed = n * ticketWidth + Mathf.Max(0, n - 1) * spacing;
-            float target = needed > container.rect.width ? container.rect.width / needed : 1f;
+            int n = Mathf.Max(1, _tickets.Count);
+            int cols = Mathf.Min(columns, n);
+            int rows = Mathf.CeilToInt(n / (float)cols);
+            float neededW = columns >= 1000 ? cols * cell.x + (cols - 1) * spacing.x : columns * cell.x + (columns - 1) * spacing.x;
+            float neededH = rows * cell.y + (rows - 1) * spacing.y;
+            Rect space = container.rect;
+            float target = Mathf.Min(1f, space.width / neededW, columns >= 1000 ? 1f : space.height / neededH);
 
             float scale = Mathf.MoveTowards(container.localScale.x, target, dt * 2.5f);
             container.localScale = new Vector3(scale, scale, 1f);
         }
 
-        private void Fly(Vector2 worldFrom, RectTransform target)
+        private void Fly(Vector2 worldFrom, RectTransform target, Vector3 worldTarget, Sprite sprite)
         {
             int i = _nextFlyer;
             _nextFlyer = (_nextFlyer + 1) % FlyerCount;
 
             // Screen Space - Overlay: a RectTransform's world position is in screen pixels.
-            _flyers[i] = new Flyer { From = boardCamera.WorldToScreenPoint(worldFrom), Target = target, Age = 0f };
+            _flyers[i] = new Flyer { From = boardCamera.WorldToScreenPoint(worldFrom), Target = target, WorldTarget = worldTarget, Age = 0f };
             Image view = _flyerViews[i];
-            view.sprite = target.GetComponent<Image>().sprite;
+            view.sprite = sprite;
             view.gameObject.SetActive(true);
             view.transform.position = _flyers[i].From;
         }
@@ -220,11 +247,12 @@ namespace SliceNServe.UI
                 f.Age += dt;
                 Image view = _flyerViews[i];
                 float t = Mathf.Clamp01(f.Age / FlySeconds);
-                if (t >= 1f || f.Target == null) { f.Age = -1f; view.gameObject.SetActive(false); continue; }
+                if (t >= 1f) { f.Age = -1f; view.gameObject.SetActive(false); continue; }
+                Vector3 to = f.Target != null ? f.Target.position : boardCamera.WorldToScreenPoint(f.WorldTarget);
 
-                // An arc: ease towards the ticket, lifted at the midpoint.
+                // An arc: ease towards the ticket (or the bubble), lifted at the midpoint.
                 float ease = t * t * (3f - 2f * t);
-                Vector3 p = Vector3.Lerp(f.From, f.Target.position, ease);
+                Vector3 p = Vector3.Lerp(f.From, to, ease);
                 p.y += Mathf.Sin(t * Mathf.PI) * 80f;
                 view.transform.position = p;
                 view.transform.localScale = Vector3.one * Mathf.Lerp(1.3f, 0.8f, t);

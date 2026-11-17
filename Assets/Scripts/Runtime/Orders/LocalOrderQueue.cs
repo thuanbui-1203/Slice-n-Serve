@@ -6,7 +6,8 @@ using UnityEngine;
 namespace SliceNServe.Orders
 {
     /// <summary>
-    /// The auto-credit rule from plan §6.3. Deliberately a plain class over a list of orders: it
+    /// The auto-credit rule from plan §6.3, and hand-serving: a filled order waits as ready until
+    /// the player serves it. Deliberately a plain class over a list of orders: it
     /// is the highest-value thing in Section 2 to unit-test, and it must run with no scene at all.
     /// </summary>
     public sealed class LocalOrderQueue : IOrderQueue
@@ -54,7 +55,18 @@ namespace SliceNServe.Orders
             }
 
             Credit(target, ingredient, position);
-            if (target.IsComplete) Serve(target);
+            if (target.IsComplete) _events.Publish(new OrderReady(target.OrderId));
+        }
+
+        /// <summary>Ready orders are not served automatically: the player taps them in the orders
+        /// panel. Until then the customer keeps waiting, and their patience keeps running.</summary>
+        public bool TryServe(int orderId)
+        {
+            OrderInstance order = Find(orderId);
+            if (order == null || order.IsClosed || !order.IsComplete) return false;
+
+            Serve(order);
+            return true;
         }
 
         /// <summary>Oldest customer first; tie-break on fewest units remaining, so nearly-done
@@ -83,14 +95,15 @@ namespace SliceNServe.Orders
             return best;
         }
 
-        /// <summary>The oldest open order: the one being served during a rush.</summary>
+        /// <summary>The oldest order still cooking: the one a rush feeds. A ready order waiting to be
+        /// served steps aside, so the line keeps moving while its dish sits on the pass.</summary>
         public OrderInstance Front()
         {
             OrderInstance front = null;
             for (int i = 0; i < _orders.Count; i++)
             {
                 OrderInstance o = _orders[i];
-                if (!o.IsClosed && (front == null || o.SpawnTime < front.SpawnTime)) front = o;
+                if (!o.IsClosed && !o.IsComplete && (front == null || o.SpawnTime < front.SpawnTime)) front = o;
             }
             return front;
         }

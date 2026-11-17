@@ -90,7 +90,7 @@ namespace SliceNServe.Board
             for (int o = 0; o < orders.ActiveCount; o++)
             {
                 OrderInstance order = orders[o];
-                if (order.IsClosed) continue;
+                if (order.IsClosed || order.IsComplete) continue;
                 if (oldest == null || order.SpawnTime < oldest.SpawnTime) oldest = order;
             }
 

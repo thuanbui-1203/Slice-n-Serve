@@ -34,6 +34,22 @@ namespace SliceNServe.Economy
         public int LevelOf(UpgradeDefinition upgrade) => Math.Min(_save.Data.LevelOf(upgrade.Id), upgrade.MaxLevel);
         public bool IsMaxed(UpgradeDefinition upgrade) => LevelOf(upgrade) >= upgrade.MaxLevel;
         public int NextCost(UpgradeDefinition upgrade) => upgrade.CostAt(LevelOf(upgrade));
+        /// <summary>Auto-throw unlocks once both Knife Speed and Split Chance are maxed out.</summary>
+        public bool AutoThrowUnlocked
+        {
+            get
+            {
+                bool speed = false, split = false;
+                for (int i = 0; i < _catalog.Count; i++)
+                {
+                    UpgradeDefinition u = _catalog[i];
+                    if (u.Kind == UpgradeKind.KnifeSpeed) speed = IsMaxed(u);
+                    else if (u.Kind == UpgradeKind.SplitChance) split = IsMaxed(u);
+                }
+                return speed && split;
+            }
+        }
+
         public bool CanBuy(UpgradeDefinition upgrade) => !IsMaxed(upgrade) && _wallet.Amount >= NextCost(upgrade);
 
         public bool TryBuy(UpgradeDefinition upgrade)

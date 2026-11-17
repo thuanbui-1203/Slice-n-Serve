@@ -12,6 +12,7 @@ namespace SliceNServe.Core
     {
         private const string MusicKey = "sns.musicVolume";
         private const string SfxKey = "sns.sfxVolume";
+        private const string AutoThrowKey = "sns.autoThrow";
 
         private float _music;
         private float _sfx;
@@ -47,6 +48,18 @@ namespace SliceNServe.Core
             {
                 if (!SupportsFullscreenToggle || Screen.fullScreen == value) return;
                 Screen.fullScreenMode = value ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed;
+                Changed?.Invoke();
+            }
+        }
+
+        /// <summary>The player's auto-throw switch (it only matters once auto-throw is unlocked). On by default.</summary>
+        public bool AutoThrow
+        {
+            get => PlayerPrefs.GetInt(AutoThrowKey, 1) == 1;
+            set
+            {
+                if (AutoThrow == value) return;
+                PlayerPrefs.SetInt(AutoThrowKey, value ? 1 : 0);
                 Changed?.Invoke();
             }
         }

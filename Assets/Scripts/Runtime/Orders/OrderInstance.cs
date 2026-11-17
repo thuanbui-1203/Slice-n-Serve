@@ -34,6 +34,9 @@ namespace SliceNServe.Orders
 
         public bool IsClosed => State == PatienceState.Served || State == PatienceState.Expired;
 
+        /// <summary>Every ingredient is in, and the customer is still waiting to be served.</summary>
+        public bool IsReady => !IsClosed && IsComplete;
+
         public float PatienceFraction => PatienceDuration <= 0f ? 0f : RemainingPatience / PatienceDuration;
 
         public bool IsComplete

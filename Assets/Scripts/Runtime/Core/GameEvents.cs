@@ -3,7 +3,8 @@ using UnityEngine;
 
 namespace SliceNServe.Core
 {
-    public enum LaunchSource { Manual = 0, Helper = 1, Split = 2 }
+    /// <summary>Auto is the auto-throw: the player's own knife, thrown for them.</summary>
+    public enum LaunchSource { Manual = 0, Helper = 1, Split = 2, Auto = 3 }
     public enum GameOverReason { ReputationDepleted = 0, Quit = 1 }
 
     public readonly struct KnifeLaunched
@@ -19,8 +20,18 @@ namespace SliceNServe.Core
         public readonly int KnifeId;
         public readonly int BounceIndex;
         public readonly Vector2 Position;
-        public KnifeBounced(int knifeId, int bounceIndex, Vector2 position)
-        { KnifeId = knifeId; BounceIndex = bounceIndex; Position = position; }
+
+        /// <summary>Bounces this knife has left from its die roll; negative on the hit that ends it.</summary>
+        public readonly int Remaining;
+        public KnifeBounced(int knifeId, int bounceIndex, Vector2 position, int remaining = 0)
+        { KnifeId = knifeId; BounceIndex = bounceIndex; Position = position; Remaining = remaining; }
+    }
+
+    /// <summary>The die was rolled for the player's next knife: it may bounce off the border this many times.</summary>
+    public readonly struct DiceRolled
+    {
+        public readonly int Value;
+        public DiceRolled(int value) { Value = value; }
     }
 
     public readonly struct KnifeReturned
@@ -71,6 +82,13 @@ namespace SliceNServe.Core
         public readonly Vector2 Position;
         public OrderProgressed(int orderId, string ingredientId, int fulfilled, int required, Vector2 position)
         { OrderId = orderId; IngredientId = ingredientId; Fulfilled = fulfilled; Required = required; Position = position; }
+    }
+
+    /// <summary>The last ingredient went in: the order waits for the player to serve it.</summary>
+    public readonly struct OrderReady
+    {
+        public readonly int OrderId;
+        public OrderReady(int orderId) { OrderId = orderId; }
     }
 
     public readonly struct OrderServed

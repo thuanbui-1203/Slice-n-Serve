@@ -92,6 +92,20 @@ namespace SliceNServe.Tests
                 for (int i = 0; i < 120; i++) yield return null;
                 Time.timeScale = 1f;
                 yield return Render(cam, rt, Path.Combine(dir, $"{label}_4_later.png"));
+
+                // A finished order waiting to be served, and the orders panel open over the line.
+                if (runner.Queue.ActiveCount > 0)
+                {
+                    Orders.OrderInstance order = runner.Queue[0];
+                    for (int l = 0; l < order.Lines.Length; l++)
+                        for (int n = order.Lines[l].Fulfilled; n < order.Lines[l].Required; n++)
+                            ServiceRegistry.Current.Events.Publish(new IngredientSliced(order.Lines[l].Ingredient, Vector2.zero, 1, 0, 1));
+                }
+                for (int i = 0; i < 30; i++) yield return null;
+                yield return Render(cam, rt, Path.Combine(dir, $"{label}_5_ready.png"));
+                runner.ToggleOrders();
+                for (int i = 0; i < 30; i++) yield return null;
+                yield return Render(cam, rt, Path.Combine(dir, $"{label}_6_orders.png"));
             }
             finally
             {

@@ -24,6 +24,7 @@ namespace SliceNServe.Board
         private int _nextId = 1;
         private int _liveCount;
         private bool _initialized;
+        private GameRandom _random;
 
         /// <summary>True when a knife is idle at the launcher: Section 2 allows one live manual
         /// knife. Helper knives (§3) never block the player.</summary>
@@ -33,12 +34,22 @@ namespace SliceNServe.Board
         /// <summary>The player's own knife is in flight. Sous-chefs only throw while it is.</summary>
         public bool PlayerKnifeLive => _manualKnife != null;
 
+        /// <summary>The die roll for the player's next throw: how many border bounces it gets.
+        /// Sous-chef knives thrown alongside it get the same; a split knife keeps what its parent
+        /// has left. Unrolled (tests, tools) it is the safety cap.</summary>
+        public int BounceBudget { get; set; } = int.MaxValue;
+
+        /// <summary>The player's knife (manual or auto-thrown), or null.</summary>
+        public KnifeController PlayerKnife => _manualKnife;
+
         /// <summary>Fired whenever a knife returns to the launcher.</summary>
         public event Action<KnifeController> KnifeReturned;
 
-        public void Initialize(RuntimeTuning tuning, EventBus events, BoardBounds bounds, IngredientSpawner spawner)
+        public void Initialize(RuntimeTuning tuning, EventBus events, BoardBounds bounds, IngredientSpawner spawner, GameRandom random = null)
         {
             _tuning = tuning;
+            _random = random ?? new GameRandom();
+            if (BounceBudget == int.MaxValue) BounceBudget = tuning.MaxKnifeBounces;
 
             // Pooled up front and never instantiated during a run.
             for (int i = 0; i < PoolCapacity; i++)
@@ -62,21 +73,23 @@ namespace SliceNServe.Board
 
         /// <summary>Launches from an arbitrary point — a split knife starts where its parent is.</summary>
         public KnifeController Launch(Vector2 position, Vector2 velocity, LaunchSource source)
-            => Launch(position, velocity, source, fromHelper: false);
+            => Launch(position, velocity, source, fromHelper: false, BounceBudget);
 
-        private KnifeController Launch(Vector2 position, Vector2 velocity, LaunchSource source, bool fromHelper)
+        private static bool IsPlayers(LaunchSource source) => source == LaunchSource.Manual || source == LaunchSource.Auto;
+
+        private KnifeController Launch(Vector2 position, Vector2 velocity, LaunchSource source, bool fromHelper, int bounceBudget)
         {
             // The single-live-knife rule guards against a double-tap; helpers bypass it (§3).
-            if (source == LaunchSource.Manual && !CanLaunch) return null;
+            if (IsPlayers(source) && !CanLaunch) return null;
 
             for (int i = 0; i < PoolCapacity; i++)
             {
                 KnifeController k = _pool[i];
                 if (k.IsLive) continue;
 
-                k.Launch(_nextId++, position, velocity, source, fromHelper);
+                k.Launch(_nextId++, position, velocity, source, fromHelper, bounceBudget);
                 _liveCount++;
-                if (source == LaunchSource.Manual) _manualKnife = k;
+                if (IsPlayers(source)) _manualKnife = k;
                 return k;
             }
             return null;
@@ -97,8 +110,8 @@ namespace SliceNServe.Board
         /// </summary>
         private void OnKnifeBounced(KnifeController k)
         {
-            if (k.HasSplit || _tuning.SplitChance <= 0f) return;
-            if (UnityEngine.Random.value >= _tuning.SplitChance) return;
+            if (k.HasSplit || _tuning.SplitChance <= 0f || k.BouncesLeft <= 0) return;
+            if (_random.Value >= _tuning.SplitChance) return;
 
             k.HasSplit = true;
             if (_pendingSplitCount < _pendingSplits.Length) _pendingSplits[_pendingSplitCount++] = k;
@@ -113,7 +126,7 @@ namespace SliceNServe.Board
                 if (!parent.IsLive) continue;
 
                 Vector2 v = parent.Body.linearVelocity;
-                Launch(parent.Body.position, Rotate(v, _tuning.Config.splitAngleDegrees), LaunchSource.Split, parent.FromHelper);
+                Launch(parent.Body.position, Rotate(v, _tuning.Config.splitAngleDegrees), LaunchSource.Split, parent.FromHelper, parent.BouncesLeft);
                 parent.Body.linearVelocity = Rotate(v, -_tuning.Config.splitAngleDegrees);   // fan out both ways
             }
             _pendingSplitCount = 0;

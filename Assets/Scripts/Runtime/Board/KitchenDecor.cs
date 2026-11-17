@@ -6,8 +6,9 @@ namespace SliceNServe.Board
 {
     /// <summary>
     /// The kitchen around the board: a cooking line along the bottom (stoves with sizzling pans
-    /// and steaming pots, a chopping station) and shelves and hanging tools down the sides, in the
-    /// space between <see cref="BoardConfig.viewBounds"/> and the play area.
+    /// and steaming pots, a chopping station), shelves and hanging tools down the right side, and
+    /// the dining room on the left where <see cref="CustomerLine"/> queues the customers — all in
+    /// the space between <see cref="BoardConfig.viewBounds"/> and the play area.
     ///
     /// Purely presentational, like <see cref="BoardFx"/>: built at start from the layout, animated
     /// procedurally (no Animator, as elsewhere), and it reacts to the run — flames flare when an
@@ -38,6 +39,18 @@ namespace SliceNServe.Board
         [Tooltip("Hang from the side rails and swing.")]
         [SerializeField] private Sprite[] hangingTools;
 
+        [Header("Dining room (left of the board, where the customers queue)")]
+        [SerializeField] private Sprite diningWall;
+        [SerializeField] private Sprite door;
+        [Tooltip("A chair, then a table.")]
+        [SerializeField] private Sprite[] furniture;
+        [Tooltip("Optional: hung from the dining room ceiling in place of the two simple lamps.")]
+        [SerializeField] private Sprite chandelier;
+        [SerializeField, Min(0.5f)] private float chandelierSize = 2.2f;
+        [SerializeField] private Color diningWallColor = new Color(0.78f, 0.62f, 0.5f);
+        [SerializeField] private Color wainscotColor = new Color(0.4f, 0.25f, 0.17f);
+        [SerializeField] private Color floorColor = new Color(0.5f, 0.33f, 0.2f);
+
         [Header("Chefs (optional animated frames, pivoted at the feet)")]
         [Tooltip("Loops while they work.")]
         [SerializeField] private Sprite[] chefChop;
@@ -66,6 +79,8 @@ namespace SliceNServe.Board
         private readonly SpriteRenderer[] _steamViews = new SpriteRenderer[SteamCount];
         private readonly Puff[] _steam = new Puff[SteamCount];
 
+        private readonly SpriteRenderer[] _glows = new SpriteRenderer[4];
+        private int _glowCount;
         private int _burnerCount, _swingerCount, _sizzlerCount, _chefCount, _steamSourceCount, _nextPuff;
         private float _untilPuff, _flare, _heat = 1f;
         private EventBus _events;
@@ -110,36 +125,40 @@ namespace SliceNServe.Board
             // The wall behind it all, tiled, reaching well past the view for ultrawide screens.
             Tiled("Wall", view.center, new Vector2(view.width * 3f, view.height * 3f), wallTile, wallColor, -15, 1.2f);
 
+            // Left of the board is the dining room, where the customers queue; the kitchen is the rest.
+            float kitchenLeft = play.xMin - border;
+            float kitchenRight = view.xMax + view.width;   // past the view, for ultrawide screens
+            if (kitchenLeft > view.xMin + 1f) Dining(view, kitchenLeft, counterTop);
+
             // Cooking line: the counter body, then its lighter lip.
-            Block(view.center.x, (counterTop + view.yMin - 3f) * 0.5f, view.width * 3f, counterTop - view.yMin + 3f, counterColor, -8);
-            Block(view.center.x, counterTop - 0.08f, view.width * 3f, 0.16f, counterTopColor, -7);
+            float lineCenter = (kitchenLeft + kitchenRight) * 0.5f, lineWidth = kitchenRight - kitchenLeft;
+            Block(lineCenter, (counterTop + view.yMin - 3f) * 0.5f, lineWidth, counterTop - view.yMin + 3f, counterColor, -8);
+            Block(lineCenter, counterTop - 0.08f, lineWidth, 0.16f, counterTopColor, -7);
 
-            // Stoves alternate with counter items along the line, symmetric about the launcher.
-            float span = view.width * 0.5f - 1.6f;
-            float[] stoveX = { -span, -span * 0.36f, span * 0.36f, span };
-            for (int i = 0; i < stoveX.Length; i++)
-                Stove(new Vector2(stoveX[i], lineY), i % 2 == 0 ? Pick(pans, i / 2) : Pick(pots, i / 2), steams: i % 2 == 1);
+            // Along the line, across the kitchen's visible width: stoves, counter items, and chefs
+            // between them, at fixed fractions so any board width lays out the same way.
+            float x0 = kitchenLeft + 0.9f, x1 = view.xMax - 0.9f;
+            float At(float f) => Mathf.Lerp(x0, x1, f);
+            float[] stoveF = { 0f, 0.36f, 0.64f, 1f };
+            for (int i = 0; i < stoveF.Length; i++)
+                Stove(new Vector2(At(stoveF[i]), lineY), i % 2 == 0 ? Pick(pans, i / 2) : Pick(pots, i / 2), steams: i % 2 == 1);
 
-            float[] itemX = { -span * 0.68f, 0f, span * 0.68f };
-            for (int i = 0; i < itemX.Length; i++)
-                Prop(Pick(counterItems, i), new Vector2(itemX[i], lineY + 0.05f), 0.85f, 6, Hash(i) * 6f - 3f);
+            float[] itemF = { 0.24f, 0.5f, 0.76f };
+            for (int i = 0; i < itemF.Length; i++)
+                Prop(Pick(counterItems, i), new Vector2(At(itemF[i]), lineY + 0.05f), 0.85f, 6, Hash(i) * 6f - 3f);
 
-            // The side strips: a rail of hanging tools up high, shelves of jars lower down.
+            // The side strip on the right: a rail of hanging tools up high, shelves lower down.
             float sideInner = play.xMax + border;
             float sideWidth = view.xMax - sideInner;
-            for (int side = -1; side <= 1; side += 2)
-            {
-                float x = side * (sideInner + Mathf.Max(0.5f, sideWidth * 0.5f));
-                Side(side, x, play, counterTop);
-            }
+            Side(1, sideInner + Mathf.Max(0.5f, sideWidth * 0.5f), play, counterTop);
 
             // Chefs, if their animation frames were provided: working the line between the stoves,
             // feet on the counter's lower edge, heads peeking over the board's rim.
             if (chefChop != null && chefChop.Length > 0)
             {
                 float feet = view.yMin + 0.05f;
-                Chef(new Vector2(-span * 0.68f - 1.0f, feet), flip: false);
-                Chef(new Vector2(span * 0.68f + 1.0f, feet), flip: true);
+                Chef(new Vector2(At(0.12f), feet), flip: false);
+                Chef(new Vector2(At(0.88f), feet), flip: true);
             }
 
             for (int i = 0; i < SteamCount; i++)
@@ -148,6 +167,77 @@ namespace SliceNServe.Board
                 _steamViews[i].enabled = false;
                 _steam[i].Life = -1f;
             }
+        }
+
+        /// <summary>The dining room: panelled wall, wooden floor, the front door the customers use,
+        /// a table by the wall, warm lamps, and the serving counter they queue up to.</summary>
+        private void Dining(Rect view, float right, float counterTop)
+        {
+            float left = view.xMin - view.width;   // past the view, for ultrawide screens
+            float floorY = counterTop + 0.2f;      // CustomerLine.FloorY: where their feet are
+            float w = right - left, cx = (left + right) * 0.5f;
+            float floorH = floorY - view.yMin + 3f, floorMid = floorY - floorH * 0.5f;
+
+            Tiled("DiningWall", new Vector2(cx, view.center.y), new Vector2(w, view.height * 3f),
+                  diningWall != null ? diningWall : wallTile, diningWallColor, -14, 1.0f);
+            Block(cx, floorY + 0.55f, w, 1.1f, wainscotColor, -13);
+            Block(cx, floorY + 1.12f, w, 0.08f, counterTopColor, -12);
+            Block(cx, floorMid, w, floorH, floorColor, -12);
+            for (float x = right - 0.6f; x > left; x -= 1.2f)   // floorboard seams
+                Block(x, floorMid, 0.04f, floorH, new Color(0f, 0f, 0f, 0.18f), -11);
+
+            // The door the customers come and go by (CustomerLine walks them to and from it).
+            float doorX = view.xMin + 1.0f;
+            if (door != null) Prop(door, new Vector2(doorX, floorY), 2.3f, -9, 0f);
+
+            // A table and chairs against the back wall, behind the line.
+            float tableX = (doorX + right) * 0.5f;
+            if (furniture != null && furniture.Length >= 2)
+            {
+                var dim = new Color(0.8f, 0.75f, 0.72f);
+                Prop(furniture[0], new Vector2(tableX - 0.9f, floorY + 0.15f), 1.0f, -10, 0f).color = dim;
+                Prop(furniture[1], new Vector2(tableX, floorY + 0.15f), 1.3f, -10, 0f).color = dim;
+                SpriteRenderer chair = Prop(furniture[0], new Vector2(tableX + 0.9f, floorY + 0.15f), 1.0f, -10, 0f);
+                chair.color = dim;
+                chair.flipX = true;
+            }
+
+            // Light from the ceiling, swaying a little: one chandelier if the art is there (its
+            // candlelight flickers), otherwise two simple lamps.
+            int lights = chandelier != null ? 1 : 2;
+            for (int i = 0; i < lights; i++)
+            {
+                float x = lights == 1 ? (doorX + right) * 0.5f : Mathf.Lerp(doorX + 0.9f, right - 1.0f, i);
+                var hook = new GameObject(lights == 1 ? "Chandelier" : "Lamp").transform;
+                hook.SetParent(transform, false);
+                hook.position = new Vector3(x, view.yMax, 0f);
+                Block(x, view.yMax - 0.4f, 0.05f, 0.8f, new Color(0.15f, 0.1f, 0.1f), -9).transform.SetParent(hook, true);
+                float glowY = chandelier != null ? view.yMax - 0.8f - chandelierSize * 0.4f : view.yMax - 1.2f;
+                SpriteRenderer glow = Sprite("Glow", circle, new Vector2(x, glowY), chandelier != null ? chandelierSize * 1.3f : 1.5f,
+                                             new Color(1f, 0.85f, 0.5f, 0.1f), -9);
+                glow.transform.SetParent(hook, true);
+                if (_glowCount < _glows.Length) _glows[_glowCount++] = glow;
+
+                if (chandelier != null)
+                {
+                    // Hung by its top edge from the end of the chain.
+                    SpriteRenderer c = Prop(chandelier, new Vector2(x, view.yMax - 0.8f), chandelierSize, -7, 0f);
+                    c.transform.position += Vector3.down * (c.bounds.max.y - (view.yMax - 0.8f));
+                    c.transform.SetParent(hook, true);
+                }
+                else
+                {
+                    Sprite("Shade", circle, new Vector2(x, view.yMax - 1.05f), 0.5f, new Color(0.95f, 0.55f, 0.2f), -8).transform.SetParent(hook, true);
+                    Sprite("Bulb", circle, new Vector2(x, view.yMax - 1.2f), 0.22f, new Color(1f, 0.95f, 0.7f), -7).transform.SetParent(hook, true);
+                }
+                if (_swingerCount < MaxSwingers)
+                    _swingers[_swingerCount++] = new Swinger { Pivot = hook, Seed = i * 2.3f, Amplitude = 2.5f };
+            }
+
+            // The serving counter at the pass, which the front of the line faces.
+            Block(right - 0.35f, floorY + 0.6f, 0.7f, 1.2f, counterTopColor, -6);
+            Block(right - 0.35f, floorY + 0.6f, 0.5f, 1.0f, shelfColor, -5);
+            Block(right - 0.38f, floorY + 1.22f, 0.86f, 0.14f, counterColor, -4);
         }
 
         private void Side(int side, float x, Rect play, float counterTop)
@@ -240,6 +330,10 @@ namespace SliceNServe.Board
                     burner.Flames[f].color = Color.Lerp(new Color(1f, 0.4f, 0.1f), new Color(1f, 0.85f, 0.3f), n);
                 }
             }
+
+            // Candlelight: the dining room's glow breathes a little.
+            for (int i = 0; i < _glowCount; i++)
+                _glows[i].color = new Color(1f, 0.85f, 0.5f, 0.07f + 0.06f * Mathf.PerlinNoise(i * 7.3f, t * 3f));
 
             for (int i = 0; i < _swingerCount; i++)
                 _swingers[i].Pivot.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(t * 1.3f + _swingers[i].Seed) * _swingers[i].Amplitude);
@@ -341,13 +435,14 @@ namespace SliceNServe.Board
             return sr;
         }
 
-        private void Block(float x, float y, float width, float height, Color color, int order)
+        private SpriteRenderer Block(float x, float y, float width, float height, Color color, int order)
         {
-            if (square == null) return;
+            if (square == null) return Sprite("Block", null, new Vector2(x, y), 1f, Color.clear, order);
 
             SpriteRenderer sr = Sprite("Block", square, new Vector2(x, y), 1f, color, order);
             Vector2 native = square.bounds.size;
             sr.transform.localScale = new Vector3(width / native.x, height / native.y, 1f);
+            return sr;
         }
 
         private void Tiled(string objectName, Vector2 at, Vector2 size, Sprite sprite, Color color, int order, float tile)

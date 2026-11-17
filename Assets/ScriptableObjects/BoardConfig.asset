@@ -20,16 +20,16 @@ MonoBehaviour:
     height: 10.8
   worldBounds:
     serializedVersion: 2
-    x: -8
+    x: -3
     y: -3.8
-    width: 16
+    width: 11
     height: 9.2
-  launcherPosition: {x: 0, y: -2.8}
+  launcherPosition: {x: 2.5, y: -2.8}
   ingredientZone:
     serializedVersion: 2
-    x: -7.5
+    x: -2.5
     y: -1.8
-    width: 15
+    width: 10
     height: 5.1
   maxDragLength: 3.5
   deadZone: 0.35

@@ -54,6 +54,7 @@ namespace SliceNServe.Tests
         {
             _services.Tuning.HelperCount = 2;
             _runner.StartRun();
+            _knives.BounceBudget = 50;   // not the die: these tests need one long throw
 
             Time.timeScale = 5f;
             float until = Time.time + _services.Tuning.HelperLaunchInterval * 1.5f;
@@ -73,6 +74,7 @@ namespace SliceNServe.Tests
         {
             _services.Tuning.HelperCount = 3;
             _runner.StartRun();
+            _knives.BounceBudget = 50;   // not the die: these tests need one long throw
             Time.timeScale = 5f;
 
             _knives.Launch(new Vector2(0.4f, 1f).normalized * 20f, LaunchSource.Manual);
@@ -98,6 +100,7 @@ namespace SliceNServe.Tests
         public IEnumerator SousChefs_AimAtWhatTheOldestOrderNeeds()
         {
             _runner.StartRun();
+            _knives.BounceBudget = 50;   // not the die: these tests need one long throw
             for (int i = 0; i < 10 && _runner.Queue.ActiveCount == 0; i++) yield return null;
             OrderInstance order = _runner.Queue[0];
             IngredientDefinition needed = order.Lines[0].Ingredient;
@@ -162,6 +165,7 @@ namespace SliceNServe.Tests
         public IEnumerator EndOfRun_BanksTheCash()
         {
             _runner.StartRun();
+            _knives.BounceBudget = 50;   // not the die: these tests need one long throw
             _services.Wallet.Add(42);
 
             Time.timeScale = 30f;
@@ -172,6 +176,59 @@ namespace SliceNServe.Tests
             var reloaded = new SaveService(_store);
             Assert.That(reloaded.Data.cash, Is.EqualTo(_services.Wallet.Amount));
             Assert.That(reloaded.Data.runsPlayed, Is.EqualTo(1));
+        }
+
+        private void MaxSpeedAndSplit()
+        {
+            _services.Wallet.Add(1000000);
+            foreach (UpgradeDefinition u in _services.Upgrades.Catalog)
+                if (u.Kind == UpgradeKind.KnifeSpeed || u.Kind == UpgradeKind.SplitChance)
+                    while (_services.Upgrades.TryBuy(u)) { }
+        }
+
+        [UnityTest]
+        public IEnumerator AutoThrow_ThrowsWhenTheKnifeIsIdle_AndTurnsTapsIntoRestocks()
+        {
+            bool before = _services.Settings.AutoThrow;
+            try
+            {
+                Assert.That(_services.Upgrades.AutoThrowUnlocked, Is.False, "a new save has not unlocked it");
+                MaxSpeedAndSplit();
+                Assert.That(_services.Upgrades.AutoThrowUnlocked, Is.True);
+                _services.Settings.AutoThrow = true;
+
+                _runner.StartRun();
+                float until = Time.time + DiceView.RollSeconds + _services.Tuning.Config.autoThrowPause + 1f;
+                while (Time.time < until && !_launches.Exists(l => l.Source == LaunchSource.Auto)) yield return null;
+
+                Assert.That(_launches.Exists(l => l.Source == LaunchSource.Auto), Is.True, "the knife throws itself");
+                Assert.That(_knives.PlayerKnifeLive, Is.True, "an auto-throw is the player's knife: one at a time, sous-chefs follow it");
+                Assert.That(Object.FindAnyObjectByType<AimInput>().TapMode, Is.True, "taps restock instead of aiming");
+
+                _services.Settings.AutoThrow = false;
+                yield return null;
+                Assert.That(Object.FindAnyObjectByType<AimInput>().TapMode, Is.False, "switched off: back to aiming");
+            }
+            finally
+            {
+                _services.Settings.AutoThrow = before;
+            }
+        }
+
+        [Test]
+        public void RestockTap_SpawnsNearTheTap_UpToTheWorkingMaximum()
+        {
+            _ingredients.Clear();
+            Vector2 at = _services.Tuning.IngredientZone.center;
+
+            Ingredient spawned = _ingredients.SpawnNear(at);
+            Assert.That(spawned, Is.Not.Null);
+            Assert.That(Vector2.Distance(spawned.Position, at), Is.LessThan(0.01f), "on the spot when it is clear");
+
+            int guard = 200;
+            while (_ingredients.LiveCount < _services.Tuning.WorkingMaxIngredientCount && guard-- > 0)
+                _ingredients.SpawnNear(new Vector2(Random.Range(-2f, 7f), Random.Range(-1.5f, 3f)));
+            Assert.That(_ingredients.SpawnNear(at), Is.Null, "never past the working maximum");
         }
     }
 }
