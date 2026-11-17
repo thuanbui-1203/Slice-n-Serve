@@ -56,6 +56,9 @@ namespace SliceNServe.UI
         private int _nextFlyer, _nextPopup;
         private bool _hintDismissed;
 
+        /// <summary>Hides the "drag back and release" hint, e.g. while auto-throw does the throwing.</summary>
+        public bool HintHidden { get; set; }
+
         public void Initialize(IOrderQueue queue, EventBus events, Wallet wallet, int startReputation)
         {
             _queue = queue;
@@ -281,7 +284,7 @@ namespace SliceNServe.UI
             }
 
             if (hint != null)
-                hint.alpha = Mathf.MoveTowards(hint.alpha, _hintDismissed ? 0f : 1f, dt * 2f);
+                hint.alpha = Mathf.MoveTowards(hint.alpha, _hintDismissed || HintHidden ? 0f : 1f, dt * 2f);
         }
     }
 }

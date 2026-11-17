@@ -85,6 +85,29 @@ namespace SliceNServe.Tests
         }
 
         [UnityTest]
+        public IEnumerator PauseCard_BackToMainMenu_EndsTheRun_AndKeepsTheCash()
+        {
+            _runner.StartRun();
+            yield return null;
+            _services.Wallet.Add(123);
+            HudPause.onClick.Invoke();
+            yield return null;
+
+            var overlay = Object.FindAnyObjectByType<RunOverlay>();
+            Button secondary = overlay.transform.Find("Card/Secondary").GetComponent<Button>();
+            Assert.That(secondary.GetComponentInChildren<TMPro.TMP_Text>().text, Is.EqualTo("Back to Main Menu"));
+
+            secondary.onClick.Invoke();
+            for (int i = 0; i < 3; i++) yield return null;
+
+            var runner = Object.FindAnyObjectByType<GameRunner>();
+            Assert.That(runner.State, Is.EqualTo(GameRunner.RunState.Title));
+            Assert.That(Object.FindAnyObjectByType<MainMenu>().IsVisible, Is.True);
+            Assert.That(Time.timeScale, Is.EqualTo(1f));
+            Assert.That(ServiceRegistry.Current.Wallet.Amount, Is.GreaterThanOrEqualTo(123), "the run's cash was saved");
+        }
+
+        [UnityTest]
         public IEnumerator Play_StartsTheRun()
         {
             MenuButton("Play").onClick.Invoke();

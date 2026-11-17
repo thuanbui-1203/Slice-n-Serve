@@ -1646,6 +1646,16 @@ namespace SliceNServe.EditorTools
             Button button = MakeButton("Button", card, cardFont, 42f, Accent, new Vector2(0f, 48f), new Vector2(460f, 104f), gameAudio, out TextMeshProUGUI label);
             Button secondary = MakeButton("Secondary", card, cardFont, 38f, new Color(0.45f, 0.32f, 0.26f), new Vector2(250f, 48f), new Vector2(300f, 104f), gameAudio, out TextMeshProUGUI secondaryLabel);
 
+            // Longer labels ("Back to Main Menu") shrink to fit their button rather than spill out.
+            foreach (TextMeshProUGUI t in new[] { label, secondaryLabel })
+            {
+                t.enableAutoSizing = true;
+                t.fontSizeMin = 20f;
+                t.fontSizeMax = t.fontSize;
+                t.rectTransform.offsetMin = new Vector2(14f, t.rectTransform.offsetMin.y);
+                t.rectTransform.offsetMax = new Vector2(-14f, t.rectTransform.offsetMax.y);
+            }
+
             // Same treatment as the upgrade cards: the Slime fonts are wide-spaced, and fake bold smears them.
             if (cardFont != font)
                 foreach (TextMeshProUGUI t in new[] { body, label, secondaryLabel })

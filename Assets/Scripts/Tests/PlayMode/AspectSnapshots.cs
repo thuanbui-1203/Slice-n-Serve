@@ -130,6 +130,9 @@ namespace SliceNServe.Tests
                     "Play again", () => { }, "Main menu", () => { });
                 for (int i = 0; i < 30; i++) yield return null;
                 yield return Render(cam, rt, Path.Combine(dir, $"{label}_7_results.png"));
+                overlay.Show("Paused", "The customers will wait. For now.", "Resume", () => { }, "Back to Main Menu", () => { });
+                for (int i = 0; i < 10; i++) yield return null;
+                yield return Render(cam, rt, Path.Combine(dir, $"{label}_7_paused.png"));
 
                 // §5 Play with Friends: two boards on one screen, mid-match.
                 Pvp.MatchSetup.BeginLocal(42, 60f);

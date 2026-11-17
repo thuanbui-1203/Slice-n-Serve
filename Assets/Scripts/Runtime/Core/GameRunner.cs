@@ -191,6 +191,7 @@ namespace SliceNServe.Core
                 _playerKnifeWasLive = knifeLive;
 
                 bool auto = AutoThrowActive;
+                if (hud != null) hud.HintHidden = auto;   // nothing to drag: the knife throws itself
                 if (auto && !aimInput.TapMode) aimInput.CancelDrag();
                 aimInput.TapMode = auto;
                 _auto.Enabled = auto;
@@ -477,7 +478,15 @@ namespace SliceNServe.Core
 
         private void ShowPause()
             => ShowOverlay("Paused", "The customers will wait. For now.", "Resume", Resume,
-                           "Upgrades", () => OpenShop(ShowPause));
+                           "Back to Main Menu", BackToMenuFromPause);
+
+        /// <summary>The pause card's way out: the run ends here, its cash already banked, and the
+        /// game goes back to the main menu (the shop is still on the HUD during a run).</summary>
+        public void BackToMenuFromPause()
+        {
+            _services.Save.Save();
+            Reload(startRun: false);
+        }
 
         /// <summary>
         /// The HUD button: spend the cash you are earning without leaving the run. The run is
